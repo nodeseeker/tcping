@@ -28,6 +28,12 @@
 tcping [-4] [-6] [-n count] [-t timeout] address port
 ```
 
+### 常见问题
+
+#### glibc版本问题
+
+如果提示`./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping) ./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)`等，是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。
+
 ## 使用示例
 ### 1. tcping 一个IPv4地址和指定的80端口
 此处使用cloudflare的1.1.1.1 (80端口对应http)
