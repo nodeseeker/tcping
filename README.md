@@ -3,9 +3,19 @@
 一款基于Golang的TCP Ping工具，支持IPv4、IPv6和域名，以及自定义端口、次数和间隔时间。
 
 ## 使用教程
+### 安装方法
+
+浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是tcping 1.1.1.1 的80端口，具体方法参考下面的使用方法和使用示例。如果是Linux平台，也可以使用root用户，将文件移动到`/usr/bin`中，这样就可以直接使用`tcp 1.1.1.1 80`而无需前面的`./`路径。
+
+目前支持的多架构多平台如下：
+
+- amd64的Linux、Windows和MacOS
+- arm的Linux
+- arm64的Linux和MacOS
+
+### 使用方法
+
 以下为程序使用方法，**建议直接看使用示例**。
-
-
 
 1. address和port为必填，其中，address可以是IPv4地址、IPv6地址，或者域名。端口即为服务器已经开启的端口，比如SSH默认的22端口，网站常用的80端口和443端口。
 2. -4 是当输入的address为域名的时候，强制tcping解析出来的IPv4地址。同理，-6 是当输入的address为域名的时候，强制tcping解析出来的IPv6地址。
