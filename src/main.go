@@ -48,7 +48,45 @@ func main() {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
-	go ping(address, port, *countFlag, *timeoutFlag)
+	var sentCount int
+	var respondedCount int
+	var minTime, maxTime, totalResponseTime int64
+
+	go func() {
+		for i := 0; *countFlag == 0 || i < *countFlag; i++ {
+			select {
+			case <-stopPing:
+				return
+			default:
+				start := time.Now()
+				conn, err := net.DialTimeout("tcp", address+":"+port, time.Duration(*timeoutFlag)*time.Second)
+				elapsed := time.Since(start).Milliseconds()
+
+				sentCount++
+				if err != nil {
+					fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
+				} else {
+					conn.Close()
+					respondedCount++
+					if respondedCount == 1 || elapsed < minTime {
+						minTime = elapsed
+					}
+					if elapsed > maxTime {
+						maxTime = elapsed
+					}
+					totalResponseTime += elapsed
+					fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
+				}
+
+				if *countFlag != 0 && i == *countFlag-1 {
+					break
+				}
+
+				time.Sleep(time.Duration(*timeoutFlag) * time.Second)
+			}
+		}
+		stopPing <- true
+	}()
 
 	select {
 	case <-interrupt:
@@ -57,6 +95,8 @@ func main() {
 	case <-stopPing:
 		fmt.Println("\nPing stopped.")
 	}
+
+	printTcpingStatistics(sentCount, respondedCount, minTime, maxTime, totalResponseTime)
 }
 
 func resolveAddress(address, version string) string {
@@ -87,31 +127,13 @@ func isIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
-func ping(address, port string, count, timeout int) {
-	defer func() {
-		stopPing <- true
-	}()
-
-	for i := 0; count == 0 || i < count; i++ {
-		select {
-		case <-stopPing:
-			return
-		default:
-			start := time.Now()
-			conn, err := net.DialTimeout("tcp", address+":"+port, time.Duration(timeout)*time.Second)
-			if err != nil {
-				fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
-			} else {
-				conn.Close()
-				elapsed := time.Since(start).Milliseconds()
-				fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
-			}
-
-			if count != 0 && i == count-1 {
-				break
-			}
-
-			time.Sleep(time.Duration(timeout) * time.Second)
-		}
+func printTcpingStatistics(sentCount, respondedCount int, minTime, maxTime, totalResponseTime int64) {
+	fmt.Println("")
+	fmt.Println("--- Tcping Statistics ---")
+	fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n", sentCount, respondedCount, float64(sentCount-respondedCount)/float64(sentCount)*100)
+	if respondedCount > 0 {
+		fmt.Printf("min/avg/max = %dms/%dms/%dms\n", minTime, totalResponseTime/int64(respondedCount), maxTime)
+	} else {
+		fmt.Println("No responses received.")
 	}
 }
