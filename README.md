@@ -48,12 +48,16 @@ tcping 1.1.1.1 80
 以下是响应
 ```
 Pinging 1.1.1.1:80...
-tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 12ms
 tcping 1.1.1.1:80 in 11ms
+tcping 1.1.1.1:80 in 12ms
+tcping 1.1.1.1:80 in 12ms
 tcping 1.1.1.1:80 in 11ms
 ^C # 此处使用了Ctrl C停止tcping
 Ping interrupted.
+
+--- Tcping Statistics ---
+4 tcp ping sent, 4 tcp ping responsed, 0.00% loss # 总尝试次数/成功次数/失败率
+min/avg/max = 11ms/11ms/12ms # 最小tcping时间/平均tcping时间/最大tcping时间
 ```
 
 ### 2. tcping 一个IPv6地址和指定的80端口
@@ -65,12 +69,16 @@ tcping 2606:4700:4700::1111 80
 以下是响应
 ```
 Pinging [2606:4700:4700::1111]:80...
-tcping [2606:4700:4700::1111]:80 in 235ms
+Failed to connect to [2606:4700:4700::1111]:80: dial tcp [2606:4700:4700::1111]:80: i/o timeout # tcping失败
+tcping [2606:4700:4700::1111]:80 in 29ms
 tcping [2606:4700:4700::1111]:80 in 12ms
 tcping [2606:4700:4700::1111]:80 in 12ms
-tcping [2606:4700:4700::1111]:80 in 11ms
 ^C
 Ping interrupted.
+
+--- Tcping Statistics ---
+4 tcp ping sent, 3 tcp ping responsed, 25.00% loss # 4个tcping中有一个失败，所以失败率为25%
+min/avg/max = 12ms/17ms/29ms
 ```
 
 ### 3. tcping 一个域名和指定的443端口，启用IPv4地址
@@ -83,12 +91,16 @@ tcping -4 nodeseek.com 443 # 这两个命令是等效的，以为默认使用IPv
 以下是响应
 ```
 Pinging 172.67.70.75:443...
-tcping 172.67.70.75:443 in 12ms
+tcping 172.67.70.75:443 in 11ms
 tcping 172.67.70.75:443 in 12ms
 tcping 172.67.70.75:443 in 11ms
 tcping 172.67.70.75:443 in 12ms
 ^C
 Ping interrupted.
+
+--- Tcping Statistics ---
+4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
+min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 4. tcping 一个域名和指定的443端口，启用IPv6地址
@@ -99,13 +111,17 @@ tcping -6 nodeseek.com 443
 
 以下是响应
 ```
-Pinging [2606:4700:20::681a:a48]:443...
-tcping [2606:4700:20::681a:a48]:443 in 28ms
-tcping [2606:4700:20::681a:a48]:443 in 13ms
-tcping [2606:4700:20::681a:a48]:443 in 12ms
-tcping [2606:4700:20::681a:a48]:443 in 12ms
+Pinging [2606:4700:20::ac43:464b]:443...
+tcping [2606:4700:20::ac43:464b]:443 in 12ms
+tcping [2606:4700:20::ac43:464b]:443 in 12ms
+tcping [2606:4700:20::ac43:464b]:443 in 11ms
+tcping [2606:4700:20::ac43:464b]:443 in 12ms
 ^C
 Ping interrupted.
+
+--- Tcping Statistics ---
+4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
+min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 5. tcping 一个IPv4地址和指定的80端口，限定tcping次数
@@ -117,11 +133,15 @@ tcping -n 3 1.1.1.1 80
 以下是响应
 ```
 Pinging 1.1.1.1:80...
-tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 12ms
+tcping 1.1.1.1:80 in 11ms
+tcping 1.1.1.1:80 in 11ms
 tcping 1.1.1.1:80 in 12ms
 
 Ping stopped. # 此处到了设定次数，自动停止
+
+--- Tcping Statistics ---
+3 tcp ping sent, 3 tcp ping responsed, 0.00% loss
+min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 6. tcping 一个IPv4地址和指定的80端口，限定tcping间隔时间次数
@@ -134,10 +154,15 @@ tcping -t 2 1.1.1.1 80
 ```
 Pinging 1.1.1.1:80...
 tcping 1.1.1.1:80 in 12ms
+tcping 1.1.1.1:80 in 11ms
+tcping 1.1.1.1:80 in 11ms
 tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 12ms
+^C
+Ping interrupted.
 
-Ping stopped.
+--- Tcping Statistics ---
+4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
+min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 7. 综合演示tcping的所有功能
@@ -148,11 +173,15 @@ tcping -6 -n 5 -t 2 nodeseek.com 443
 以下是响应
 ```
 Pinging [2606:4700:20::681a:b48]:443...
-tcping [2606:4700:20::681a:b48]:443 in 12ms
+tcping [2606:4700:20::681a:b48]:443 in 11ms
 tcping [2606:4700:20::681a:b48]:443 in 12ms
 tcping [2606:4700:20::681a:b48]:443 in 12ms
 tcping [2606:4700:20::681a:b48]:443 in 12ms
 tcping [2606:4700:20::681a:b48]:443 in 12ms
 
 Ping stopped.
+
+--- Tcping Statistics ---
+5 tcp ping sent, 5 tcp ping responsed, 0.00% loss
+min/avg/max = 11ms/11ms/12ms
 ```
