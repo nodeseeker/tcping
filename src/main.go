@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +34,11 @@ func main() {
 
 	address := args[0]
 	port := args[1]
+
+	if _, err := strconv.Atoi(port); err != nil || port == "0" {
+		fmt.Println("Invalid port number.")
+		os.Exit(1)
+	}
 
 	if *ipv4Flag || (!*ipv6Flag && isIPv4(address)) {
 		address = resolveAddress(address, "ipv4")
