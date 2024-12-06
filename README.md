@@ -30,13 +30,6 @@ tcping [-4] [-6] [-n count] [-t timeout] address port
 
 ### 常见问题
 
-#### glibc版本问题
-
-如果提示glibc找不到，如下：是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。
-```
-./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
-./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
-```
 
 ## 使用示例
 ### 1. tcping 一个IPv4地址和指定的80端口
@@ -184,4 +177,22 @@ Ping stopped.
 --- Tcping Statistics ---
 5 tcp ping sent, 5 tcp ping responsed, 0.00% loss
 min/avg/max = 11ms/11ms/12ms
+```
+
+#### 自己编译
+程序使用纯golang编写，可以自己编译，编译方法如下，`$GOOS`是目标操作系统，`$GOARCH`是目标CPU架构，`$SRC_PATH`是源代码路径，`$OUT_FILE`是输出文件路径。
+```
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "$OUT_FILE" $SRC_PATH
+```
+此外，也提供了批量编译脚本`complier.sh`，可以直接运行，但需要修改脚本中的目标平台和架构（`$GOOS`和`$GOARCH`变量）和源码路径（`$SRC_PATH`和`OUT_DIR`变量）。
+
+
+#### glibc版本问题
+
+**1.2.0版本已经解决了glibc依赖问题**
+
+如果提示glibc找不到，如下：是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。
+```
+./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
+./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
 ```
