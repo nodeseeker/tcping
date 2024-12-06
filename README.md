@@ -12,8 +12,9 @@
 目前支持的多架构多平台如下：
 
 - amd64的Linux、Windows和MacOS
-- arm的Linux
-- arm64的Linux和MacOS
+- arm的Linux、Windows
+- arm64的Linux、Windows和MacOS
+- loongarch64的Linux
 
 ### 使用方法
 
