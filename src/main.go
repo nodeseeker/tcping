@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const version = "v1.3.0"
+const version = "v1.3.1"
 
 var stopPing chan bool
 
