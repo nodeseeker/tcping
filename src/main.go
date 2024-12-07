@@ -116,10 +116,10 @@ func main() {
 
 	select {
 	case <-interrupt:
-		fmt.Println("\nPing interrupted.")
+		fmt.Println("\nTcping interrupted.")
 		stopPing <- true
 	case <-stopPing:
-		fmt.Println("\nPing stopped.")
+		fmt.Println("\nTcping stopped.")
 	}
 
 	printTcpingStatistics(sentCount, respondedCount, minTime, maxTime, totalResponseTime)
