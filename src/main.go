@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const version = "v1.3.0"
+
 var stopPing chan bool
 
 func main() {
@@ -19,7 +21,25 @@ func main() {
 	ipv6Flag := flag.Bool("6", false, "Ping IPv6 address")
 	countFlag := flag.Int("n", 0, "Number of pings (default: infinite)")
 	timeoutFlag := flag.Int("t", 1, "Time interval between pings in seconds")
+	versionFlag := flag.Bool("v", false, "Show version information")
+	helpFlag := flag.Bool("h", false, "Show help information")
 	flag.Parse()
+
+	if *helpFlag {
+		fmt.Println("Usage: tcping [-4] [-6] [-n count] [-t timeout] [-v] [-h] address port")
+		fmt.Println("  -4    Ping IPv4 address")
+		fmt.Println("  -6    Ping IPv6 address")
+		fmt.Println("  -n    Number of pings (default: infinite)")
+		fmt.Println("  -t    Time interval between pings in seconds")
+		fmt.Println("  -v    Show version information")
+		fmt.Println("  -h    Show help information")
+		os.Exit(0)
+	}
+
+	if *versionFlag {
+		fmt.Printf("tcping version %s\n", version)
+		os.Exit(0)
+	}
 
 	if *ipv4Flag && *ipv6Flag {
 		fmt.Println("Both -4 and -6 flags cannot be used together.")
