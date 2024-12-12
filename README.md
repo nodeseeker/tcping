@@ -5,7 +5,7 @@
 ## 使用教程
 ### 安装方法
 
-浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是tcping 1.1.1.1 的80端口，具体方法参考下面的使用方法和使用示例。如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中，这样就可以直接使用`tcp 1.1.1.1 80`而无需指定路径。
+浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是`tcping` IP 为 `1.1.1.1` 的 `80` 端口，具体方法参考下面的使用方法和使用示例。如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中，这样就可以直接使用`tcping 1.1.1.1 80`而无需指定路径。
 
 ![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/main/assets/tcping_releases.jpg)
 
