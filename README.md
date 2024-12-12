@@ -79,7 +79,7 @@ min/avg/max = 12ms/17ms/29ms
 此处使用nodeseek.com(443端口对应https)
 ```
 tcping nodeseek.com 443
-tcping -4 nodeseek.com 443 # 这两个命令是等效的，以为默认使用IPv4地址
+tcping -4 nodeseek.com 443 # 这两个命令是等效的，默认使用IPv4地址
 ```
 
 以下是响应
@@ -192,7 +192,7 @@ CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "
 
 **1.2.0版本已经解决了glibc依赖问题**
 
-如果提示glibc找不到，如下：是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。
+如果旧版本提示glibc找不到（如下），是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。**强烈推荐使用新版本**。
 ```
 ./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
 ./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
