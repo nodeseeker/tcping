@@ -14,15 +14,45 @@ import (
 	"time"
 )
 
-const version = "v1.4.1"
+const version = "v1.4.2"
+
+// 统一的错误处理退出函数
+func exitWithError(format string, args ...interface{}) {
+	fmt.Printf(format+"\n", args...)
+	os.Exit(1)
+}
 
 type Statistics struct {
 	sync.Mutex
-	sentCount         int
-	respondedCount    int
-	minTime           int64
-	maxTime           int64
-	totalResponseTime int64
+	sentCount      int
+	respondedCount int
+	times          []int64 // 存储所有响应时间，用于计算统计信息
+}
+
+func (s *Statistics) updateStats(elapsed int64) {
+	s.Lock()
+	defer s.Unlock()
+	s.times = append(s.times, elapsed)
+}
+
+func (s *Statistics) getStats() (min, avg, max int64) {
+	if len(s.times) == 0 {
+		return 0, 0, 0
+	}
+	min = s.times[0]
+	max = s.times[0]
+	sum := int64(0)
+
+	for _, t := range s.times {
+		if t < min {
+			min = t
+		}
+		if t > max {
+			max = t
+		}
+		sum += t
+	}
+	return min, sum / int64(len(s.times)), max
 }
 
 func init() {
@@ -68,14 +98,13 @@ func main() {
 	}
 
 	if *ipv4Flag && *ipv6Flag {
-		fmt.Println("Both -4 and -6 flags cannot be used together.")
-		os.Exit(1)
+		exitWithError("Both -4 and -6 flags cannot be used together.")
 	}
 
 	args := flag.Args()
 	if len(args) < 2 {
 		flag.Usage()
-		os.Exit(1)
+		exitWithError("Insufficient arguments")
 	}
 
 	address := args[0]
@@ -139,18 +168,18 @@ func validatePort(port string) int {
 	return portNum
 }
 
-// 简化地址类型判断
+// 简化的地址类型检查函数
 func getAddressType(address string, ipv4, ipv6 bool) string {
-	if ipv4 {
+	switch {
+	case ipv4:
+		return "ipv4"
+	case ipv6:
+		return "ipv6"
+	case strings.Count(address, ":") >= 2:
+		return "ipv6"
+	default:
 		return "ipv4"
 	}
-	if ipv6 {
-		return "ipv6"
-	}
-	if isIPv6(address) {
-		return "ipv6"
-	}
-	return "ipv4"
 }
 
 // 简化地址解析函数
@@ -179,39 +208,28 @@ func resolveAddress(address, version string) string {
 	return ""
 }
 
-func isIPv4(address string) bool {
-	return strings.Count(address, ":") == 0
-}
-
-func isIPv6(address string) bool {
-	return strings.Count(address, ":") >= 2
-}
-
 func pingOnce(address, port string, timeout int, stats *Statistics) {
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp",
-		address+":"+port,
+		fmt.Sprintf("%s:%s", address, port),
 		time.Duration(timeout)*time.Millisecond)
 	elapsed := time.Since(start).Milliseconds()
 
 	stats.Lock()
-	defer stats.Unlock()
-
 	stats.sentCount++
+	stats.Unlock()
+
 	if err != nil {
 		fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
 		return
 	}
 
 	defer conn.Close()
+	stats.Lock()
 	stats.respondedCount++
-	if stats.respondedCount == 1 || elapsed < stats.minTime {
-		stats.minTime = elapsed
-	}
-	if elapsed > stats.maxTime {
-		stats.maxTime = elapsed
-	}
-	stats.totalResponseTime += elapsed
+	stats.Unlock()
+
+	stats.updateStats(elapsed)
 	fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
 }
 
@@ -220,15 +238,14 @@ func printTcpingStatistics(stats *Statistics) {
 	defer stats.Unlock()
 
 	fmt.Println("\n--- Tcping Statistics ---")
-	lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
-	fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n",
-		stats.sentCount, stats.respondedCount, lossRate)
+	if stats.sentCount > 0 {
+		lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
+		fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n",
+			stats.sentCount, stats.respondedCount, lossRate)
 
-	if stats.respondedCount > 0 {
-		avgTime := stats.totalResponseTime / int64(stats.respondedCount)
-		fmt.Printf("min/avg/max = %dms/%dms/%dms\n",
-			stats.minTime, avgTime, stats.maxTime)
-	} else {
-		fmt.Println("No responses received.")
+		if stats.respondedCount > 0 {
+			min, avg, max := stats.getStats()
+			fmt.Printf("min/avg/max = %dms/%dms/%dms\n", min, avg, max)
+		}
 	}
 }
