@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const version = "v1.4.0"
+const version = "v1.4.1"
 
 type Statistics struct {
 	sync.Mutex
@@ -35,8 +35,8 @@ Options:
     -n count         Number of pings (default: infinite)
     -t seconds       Time interval between pings
     -w milliseconds  Connection timeout
-    -v              Show version information
-    -h              Show help information
+    -v               Show version information
+    -h               Show help information
 
 Examples:
     tcping google.com 80
@@ -74,28 +74,20 @@ func main() {
 
 	args := flag.Args()
 	if len(args) < 2 {
-		fmt.Println("Usage: tcping [-4] [-6] [-n count] [-t interval] [-w timeout] Address Port")
+		flag.Usage()
 		os.Exit(1)
 	}
 
 	address := args[0]
 	port := args[1]
 
-	if err := validatePort(port); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
+	// 验证并获取端口数值
+	portNum := validatePort(port)
 
-	if *ipv4Flag || (!*ipv6Flag && isIPv4(address)) {
-		address = resolveAddress(address, "ipv4")
-	} else if *ipv6Flag || isIPv6(address) {
-		address = resolveAddress(address, "ipv6")
-	} else {
-		// Default to IPv4 if no -4 or -6 flags specified and address is not explicitly IPv6
-		address = resolveAddress(address, "ipv4")
-	}
+	// 使用验证后的端口数值
+	address = resolveAddress(address, getAddressType(address, *ipv4Flag, *ipv6Flag))
+	fmt.Printf("Pinging %s:%d...\n", address, portNum)
 
-	fmt.Printf("Pinging %s:%s...\n", address, port)
 	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -106,7 +98,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				pingOnce(address, port, *connectTimeoutFlag, stats)
+				// 使用数值端口而不是字符串
+				pingOnce(address, strconv.Itoa(portNum), *connectTimeoutFlag, stats)
 				if *countFlag != 0 && i == *countFlag-1 {
 					break
 				}
@@ -130,19 +123,37 @@ func main() {
 	printTcpingStatistics(stats)
 }
 
-func validatePort(port string) error {
+// 修改端口验证函数，返回检验后的数值端口
+func validatePort(port string) int {
 	portNum, err := strconv.Atoi(port)
 	if err != nil {
-		return fmt.Errorf("invalid port number format: %s", port)
+		fmt.Println("Error: port must be a number")
+		os.Exit(1)
 	}
 
-	if portNum <= 0 || portNum > 65535 {
-		return fmt.Errorf("port number must be between 1 and 65535")
+	if portNum < 1 || portNum > 65535 {
+		fmt.Printf("Error: port %d is invalid (must be between 1 and 65535)\n", portNum)
+		os.Exit(1)
 	}
 
-	return nil
+	return portNum
 }
 
+// 简化地址类型判断
+func getAddressType(address string, ipv4, ipv6 bool) string {
+	if ipv4 {
+		return "ipv4"
+	}
+	if ipv6 {
+		return "ipv6"
+	}
+	if isIPv6(address) {
+		return "ipv6"
+	}
+	return "ipv4"
+}
+
+// 简化地址解析函数
 func resolveAddress(address, version string) string {
 	ipList, err := net.LookupIP(address)
 	if err != nil {
@@ -151,10 +162,15 @@ func resolveAddress(address, version string) string {
 	}
 
 	for _, ip := range ipList {
-		if version == "ipv4" && ip.To4() != nil {
-			return ip.String()
-		} else if version == "ipv6" && ip.To16() != nil && ip.To4() == nil {
-			return "[" + ip.String() + "]"
+		switch version {
+		case "ipv4":
+			if ip.To4() != nil {
+				return ip.String()
+			}
+		case "ipv6":
+			if ip.To16() != nil && ip.To4() == nil {
+				return "[" + ip.String() + "]"
+			}
 		}
 	}
 
