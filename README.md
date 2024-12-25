@@ -24,6 +24,7 @@
 2. -4 是当输入的address为域名的时候，强制tcping解析出来的IPv4地址。同理，-6 是当输入的address为域名的时候，强制tcping解析出来的IPv6地址。
 3. -n 是tcping的次数，后面必须跟一个正整数，比如 `-n 10`，就是tcping 10次，之后自动停止。默认一直tcping下去，只有`Ctrl C`才会停止。
 4. -t 是设置每两次tcping之间的间隔，后面必须跟一个正整数，比如`-t 2`，是每隔2秒钟tcping一次。默认每秒钟tcping一次。
+5. -w 是设置tcping的超时时间，后面必须跟一个正整数，比如`-w 1000`，是设置tcping的超时时间为500毫秒。默认超时时间为1000毫秒，即1秒钟。
 
 ```
 tcping [-4] [-6] [-n count] [-t timeout] address port
@@ -178,6 +179,23 @@ Ping stopped.
 --- Tcping Statistics ---
 5 tcp ping sent, 5 tcp ping responsed, 0.00% loss
 min/avg/max = 11ms/11ms/12ms
+```
+
+### 8. tcping 一个IPv4地址和指定的80端口，设置超时时间
+此处使用cloudflare的的1.1.1.1 (80端口对应http)，在地址和端口前加`-w 100`，100是指tcping超时时间为100毫秒。由于服务器距离较远，所以超时。主要用于给测试网络延迟设置一个上限。
+```
+PS C:\Users\Imes> tcping -w 100 1.1.1.1 80
+Pinging 1.1.1.1:80...
+Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
+Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
+Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
+Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
+
+Tcping interrupted.
+
+--- Tcping Statistics ---
+4 tcp ping sent, 0 tcp ping responsed, 100.00% loss
+No responses received.
 ```
 
 #### 自己编译
