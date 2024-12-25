@@ -14,67 +14,101 @@ import (
 	"time"
 )
 
-const version = "v1.4.2"
+const (
+	version     = "v1.4.5"
+	dividerLine = "------------------------------------------------------------"
+)
 
-// 统一的错误处理退出函数
-func exitWithError(format string, args ...interface{}) {
-	fmt.Printf(format+"\n", args...)
-	os.Exit(1)
-}
-
+// 优化统计结构
 type Statistics struct {
 	sync.Mutex
 	sentCount      int
 	respondedCount int
-	times          []int64 // 存储所有响应时间，用于计算统计信息
+	minTime        float64
+	maxTime        float64
+	avgTime        float64 // 直接存储平均值，避免重复计算
 }
 
-func (s *Statistics) updateStats(elapsed int64) {
+func (s *Statistics) update(elapsed float64, success bool) {
 	s.Lock()
 	defer s.Unlock()
-	s.times = append(s.times, elapsed)
+
+	s.sentCount++
+	if !success {
+		return
+	}
+
+	s.respondedCount++
+	if s.respondedCount == 1 {
+		s.minTime = elapsed
+		s.maxTime = elapsed
+		s.avgTime = elapsed
+		return
+	}
+
+	// 使用递推公式更新平均值
+	s.avgTime = s.avgTime + (elapsed-s.avgTime)/float64(s.respondedCount)
+	if elapsed < s.minTime {
+		s.minTime = elapsed
+	}
+	if elapsed > s.maxTime {
+		s.maxTime = elapsed
+	}
 }
 
-func (s *Statistics) getStats() (min, avg, max int64) {
-	if len(s.times) == 0 {
-		return 0, 0, 0
+// 统一的退出函数
+func exit(code int, format string, args ...interface{}) {
+	if format != "" {
+		printError(format, args...)
 	}
-	min = s.times[0]
-	max = s.times[0]
-	sum := int64(0)
-
-	for _, t := range s.times {
-		if t < min {
-			min = t
-		}
-		if t > max {
-			max = t
-		}
-		sum += t
-	}
-	return min, sum / int64(len(s.times)), max
+	os.Exit(code)
 }
 
-func init() {
-	flag.Usage = func() {
-		helpText := `Usage: tcping [options] address port
+func printHelp() {
+	fmt.Printf(`TCPing %s - TCP Connection Tester
+
+Description:
+    TCPing tests TCP connectivity to target host and port.
+
+Usage: 
+    tcping [options] <host> <port>
 
 Options:
-    -4               Ping IPv4 address
-    -6               Ping IPv6 address
-    -n count         Number of pings (default: infinite)
-    -t seconds       Time interval between pings
-    -w milliseconds  Connection timeout
-    -v               Show version information
-    -h               Show help information
+    -4              Force IPv4
+    -6              Force IPv6
+    -n <count>      Number of requests to send (default: infinite)
+    -t <seconds>    Interval between requests (default: 1s)
+    -w <ms>         Connection timeout (default: 1000ms)
+    -v              Show version information
+    -h              Show this help message
 
 Examples:
-    tcping google.com 80
-    tcping -4 -n 5 -t 2 8.8.8.8 53
-    tcping -6 -w 2000 2001:4860:4860::8888 443
-`
-		fmt.Fprintf(os.Stderr, "%s\n", strings.TrimSpace(helpText))
+    tcping google.com 80            # Basic usage
+    tcping -4 -n 5 8.8.8.8 443      # IPv4, 5 requests
+    tcping -w 2000 example.com 22   # 2 second timeout
+`, version)
+	os.Exit(0)
+}
+
+func printError(format string, a ...interface{}) {
+	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", a...)
+}
+
+func printVersion() {
+	fmt.Printf("TCPing version %s\n", version)
+	fmt.Println("Copyright (c) 2024. All rights reserved.")
+	os.Exit(0)
+}
+
+func validatePort(port string) error {
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port number format")
 	}
+	if portNum <= 0 || portNum > 65535 {
+		return fmt.Errorf("port number must be between 1 and 65535")
+	}
+	return nil
 }
 
 func main() {
@@ -88,35 +122,39 @@ func main() {
 	flag.Parse()
 
 	if *helpFlag {
-		flag.Usage()
-		os.Exit(0)
+		printHelp()
 	}
 
 	if *versionFlag {
-		fmt.Printf("tcping version %s\n", version)
-		os.Exit(0)
+		printVersion()
 	}
 
 	if *ipv4Flag && *ipv6Flag {
-		exitWithError("Both -4 and -6 flags cannot be used together.")
+		printError("Cannot use both -4 and -6 flags together")
+		os.Exit(1)
 	}
 
 	args := flag.Args()
 	if len(args) < 2 {
-		flag.Usage()
-		exitWithError("Insufficient arguments")
+		printError("Insufficient arguments")
+		fmt.Println("\nUsage: tcping [options] <host> <port>")
+		fmt.Println("Try 'tcping -h' for more information")
+		os.Exit(1)
 	}
 
 	address := args[0]
 	port := args[1]
 
-	// 验证并获取端口数值
-	portNum := validatePort(port)
+	if err := validatePort(port); err != nil {
+		printError("%v", err)
+		os.Exit(1)
+	}
 
-	// 使用验证后的端口数值
-	address = resolveAddress(address, getAddressType(address, *ipv4Flag, *ipv6Flag))
-	fmt.Printf("Pinging %s:%d...\n", address, portNum)
+	// 优化地址解析函数
+	address = resolveAddress(address, *ipv4Flag || (!*ipv6Flag && isIPv4(address)),
+		*ipv6Flag || isIPv6(address))
 
+	fmt.Printf("TCPinging %s:%s...\n", address, port)
 	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -127,8 +165,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				// 使用数值端口而不是字符串
-				pingOnce(address, strconv.Itoa(portNum), *connectTimeoutFlag, stats)
+				pingOnce(address, port, *connectTimeoutFlag, stats)
 				if *countFlag != 0 && i == *countFlag-1 {
 					break
 				}
@@ -152,100 +189,103 @@ func main() {
 	printTcpingStatistics(stats)
 }
 
-// 修改端口验证函数，返回检验后的数值端口
-func validatePort(port string) int {
-	portNum, err := strconv.Atoi(port)
-	if err != nil {
-		fmt.Println("Error: port must be a number")
-		os.Exit(1)
+// 优化地址解析函数
+func resolveAddress(address string, useIPv4, useIPv6 bool) string {
+	// 如果已经是有效IP地址，直接返回
+	if ip := net.ParseIP(address); ip != nil {
+		isV4 := ip.To4() != nil
+		if useIPv4 && !isV4 {
+			exit(1, "Address %s is not an IPv4 address", address)
+		}
+		if useIPv6 && isV4 {
+			exit(1, "Address %s is not an IPv6 address", address)
+		}
+		if !isV4 {
+			return "[" + ip.String() + "]"
+		}
+		return ip.String()
 	}
 
-	if portNum < 1 || portNum > 65535 {
-		fmt.Printf("Error: port %d is invalid (must be between 1 and 65535)\n", portNum)
-		os.Exit(1)
-	}
-
-	return portNum
-}
-
-// 简化的地址类型检查函数
-func getAddressType(address string, ipv4, ipv6 bool) string {
-	switch {
-	case ipv4:
-		return "ipv4"
-	case ipv6:
-		return "ipv6"
-	case strings.Count(address, ":") >= 2:
-		return "ipv6"
-	default:
-		return "ipv4"
-	}
-}
-
-// 简化地址解析函数
-func resolveAddress(address, version string) string {
 	ipList, err := net.LookupIP(address)
 	if err != nil {
-		fmt.Printf("Failed to resolve %s: %v\n", address, err)
-		os.Exit(1)
+		exit(1, "Failed to resolve %s: %v", address, err)
 	}
 
-	for _, ip := range ipList {
-		switch version {
-		case "ipv4":
+	if len(ipList) == 0 {
+		exit(1, "No IP addresses found for %s", address)
+	}
+
+	// 如果指定了IP版本，只查找对应版本的地址
+	if useIPv4 {
+		for _, ip := range ipList {
 			if ip.To4() != nil {
 				return ip.String()
 			}
-		case "ipv6":
-			if ip.To16() != nil && ip.To4() == nil {
+		}
+		exit(1, "No IPv4 address found for %s", address)
+	}
+
+	if useIPv6 {
+		for _, ip := range ipList {
+			if ip.To4() == nil {
 				return "[" + ip.String() + "]"
 			}
 		}
+		exit(1, "No IPv6 address found for %s", address)
 	}
 
-	fmt.Printf("No %s addresses found for %s\n", version, address)
-	os.Exit(1)
-	return ""
+	// 未指定版本要求时，返回第一个地址
+	ip := ipList[0]
+	if ip.To4() == nil {
+		return "[" + ip.String() + "]"
+	}
+	return ip.String()
 }
 
+func isIPv4(address string) bool {
+	return strings.Count(address, ":") == 0
+}
+
+func isIPv6(address string) bool {
+	return strings.Count(address, ":") >= 2
+}
+
+// 修改 pingOnce 函数使用浮点数计时
 func pingOnce(address, port string, timeout int, stats *Statistics) {
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp",
-		fmt.Sprintf("%s:%s", address, port),
+		address+":"+port,
 		time.Duration(timeout)*time.Millisecond)
-	elapsed := time.Since(start).Milliseconds()
+	elapsed := float64(time.Since(start).Microseconds()) / 1000.0 // 转换为毫秒的浮点数
 
-	stats.Lock()
-	stats.sentCount++
-	stats.Unlock()
+	success := err == nil
+	stats.update(elapsed, success)
 
-	if err != nil {
-		fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
+	if !success {
+		printError("Connection failed: %v", err)
 		return
 	}
 
 	defer conn.Close()
-	stats.Lock()
-	stats.respondedCount++
-	stats.Unlock()
-
-	stats.updateStats(elapsed)
-	fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
+	fmt.Printf("TCPing to %s:%s - time=%.3fms\n", address, port, elapsed)
 }
 
+// 优化统计信息打印
 func printTcpingStatistics(stats *Statistics) {
 	stats.Lock()
 	defer stats.Unlock()
 
-	fmt.Println("\n--- Tcping Statistics ---")
+	fmt.Printf("\n%s\nTCPing Statistics:\n%s\n", dividerLine, dividerLine)
+
 	if stats.sentCount > 0 {
 		lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
-		fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n",
+		fmt.Printf("    Requests:  %d sent, %d received, %.1f%% loss\n",
 			stats.sentCount, stats.respondedCount, lossRate)
 
 		if stats.respondedCount > 0 {
-			min, avg, max := stats.getStats()
-			fmt.Printf("min/avg/max = %dms/%dms/%dms\n", min, avg, max)
+			fmt.Printf("    Latency:   min=%.3fms, avg=%.3fms, max=%.3fms\n",
+				stats.minTime, stats.avgTime, stats.maxTime)
 		}
 	}
+	fmt.Println(dividerLine)
 }
