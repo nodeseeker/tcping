@@ -25,6 +25,28 @@ type Statistics struct {
 	totalResponseTime int64
 }
 
+func init() {
+	flag.Usage = func() {
+		helpText := `Usage: tcping [options] address port
+
+Options:
+    -4               Ping IPv4 address
+    -6               Ping IPv6 address
+    -n count         Number of pings (default: infinite)
+    -t seconds       Time interval between pings
+    -w milliseconds  Connection timeout
+    -v              Show version information
+    -h              Show help information
+
+Examples:
+    tcping google.com 80
+    tcping -4 -n 5 -t 2 8.8.8.8 53
+    tcping -6 -w 2000 2001:4860:4860::8888 443
+`
+		fmt.Fprintf(os.Stderr, "%s\n", strings.TrimSpace(helpText))
+	}
+}
+
 func main() {
 	ipv4Flag := flag.Bool("4", false, "Ping IPv4 address")
 	ipv6Flag := flag.Bool("6", false, "Ping IPv6 address")
@@ -36,14 +58,7 @@ func main() {
 	flag.Parse()
 
 	if *helpFlag {
-		fmt.Println("Usage: tcping [-4] [-6] [-n count] [-t timeout] [-v] [-h] address port")
-		fmt.Println("  -4    Ping IPv4 address")
-		fmt.Println("  -6    Ping IPv6 address")
-		fmt.Println("  -n    Number of pings (default: infinite)")
-		fmt.Println("  -t    Time interval between pings in seconds")
-		fmt.Println("  -v    Show version information")
-		fmt.Println("  -h    Show help information")
-		fmt.Println("  -w    Connection timeout in milliseconds")
+		flag.Usage()
 		os.Exit(0)
 	}
 
@@ -59,15 +74,15 @@ func main() {
 
 	args := flag.Args()
 	if len(args) < 2 {
-		fmt.Println("Usage: tcping [-4] [-6] [-n count] [-t timeout] address port")
+		fmt.Println("Usage: tcping [-4] [-6] [-n count] [-t interval] [-w timeout] Address Port")
 		os.Exit(1)
 	}
 
 	address := args[0]
 	port := args[1]
 
-	if _, err := strconv.Atoi(port); err != nil || port == "0" {
-		fmt.Println("Invalid port number.")
+	if err := validatePort(port); err != nil {
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -113,6 +128,19 @@ func main() {
 	}
 
 	printTcpingStatistics(stats)
+}
+
+func validatePort(port string) error {
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port number format: %s", port)
+	}
+
+	if portNum <= 0 || portNum > 65535 {
+		return fmt.Errorf("port number must be between 1 and 65535")
+	}
+
+	return nil
 }
 
 func resolveAddress(address, version string) string {
