@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -8,13 +9,21 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
-const version = "v1.3.1"
+const version = "v1.4.0"
 
-var stopPing chan bool
+type Statistics struct {
+	sync.Mutex
+	sentCount         int
+	respondedCount    int
+	minTime           int64
+	maxTime           int64
+	totalResponseTime int64
+}
 
 func main() {
 	ipv4Flag := flag.Bool("4", false, "Ping IPv4 address")
@@ -23,6 +32,7 @@ func main() {
 	timeoutFlag := flag.Int("t", 1, "Time interval between pings in seconds")
 	versionFlag := flag.Bool("v", false, "Show version information")
 	helpFlag := flag.Bool("h", false, "Show help information")
+	connectTimeoutFlag := flag.Int("w", 1000, "Connection timeout in milliseconds")
 	flag.Parse()
 
 	if *helpFlag {
@@ -33,6 +43,7 @@ func main() {
 		fmt.Println("  -t    Time interval between pings in seconds")
 		fmt.Println("  -v    Show version information")
 		fmt.Println("  -h    Show help information")
+		fmt.Println("  -w    Connection timeout in milliseconds")
 		os.Exit(0)
 	}
 
@@ -70,59 +81,38 @@ func main() {
 	}
 
 	fmt.Printf("Pinging %s:%s...\n", address, port)
-	stopPing = make(chan bool, 1)
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
-
-	var sentCount int
-	var respondedCount int
-	var minTime, maxTime, totalResponseTime int64
+	stats := &Statistics{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	go func() {
 		for i := 0; *countFlag == 0 || i < *countFlag; i++ {
 			select {
-			case <-stopPing:
+			case <-ctx.Done():
 				return
 			default:
-				start := time.Now()
-				conn, err := net.DialTimeout("tcp", address+":"+port, time.Duration(*timeoutFlag)*time.Second)
-				elapsed := time.Since(start).Milliseconds()
-
-				sentCount++
-				if err != nil {
-					fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
-				} else {
-					conn.Close()
-					respondedCount++
-					if respondedCount == 1 || elapsed < minTime {
-						minTime = elapsed
-					}
-					if elapsed > maxTime {
-						maxTime = elapsed
-					}
-					totalResponseTime += elapsed
-					fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
-				}
-
+				pingOnce(address, port, *connectTimeoutFlag, stats)
 				if *countFlag != 0 && i == *countFlag-1 {
 					break
 				}
-
 				time.Sleep(time.Duration(*timeoutFlag) * time.Second)
 			}
 		}
-		stopPing <- true
+		cancel()
 	}()
+
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
 	select {
 	case <-interrupt:
 		fmt.Println("\nTcping interrupted.")
-		stopPing <- true
-	case <-stopPing:
-		fmt.Println("\nTcping stopped.")
+		cancel()
+	case <-ctx.Done():
+		fmt.Println("\nTcping completed.")
 	}
 
-	printTcpingStatistics(sentCount, respondedCount, minTime, maxTime, totalResponseTime)
+	printTcpingStatistics(stats)
 }
 
 func resolveAddress(address, version string) string {
@@ -153,12 +143,47 @@ func isIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
-func printTcpingStatistics(sentCount, respondedCount int, minTime, maxTime, totalResponseTime int64) {
-	fmt.Println("")
-	fmt.Println("--- Tcping Statistics ---")
-	fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n", sentCount, respondedCount, float64(sentCount-respondedCount)/float64(sentCount)*100)
-	if respondedCount > 0 {
-		fmt.Printf("min/avg/max = %dms/%dms/%dms\n", minTime, totalResponseTime/int64(respondedCount), maxTime)
+func pingOnce(address, port string, timeout int, stats *Statistics) {
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp",
+		address+":"+port,
+		time.Duration(timeout)*time.Millisecond)
+	elapsed := time.Since(start).Milliseconds()
+
+	stats.Lock()
+	defer stats.Unlock()
+
+	stats.sentCount++
+	if err != nil {
+		fmt.Printf("Failed to connect to %s:%s: %v\n", address, port, err)
+		return
+	}
+
+	defer conn.Close()
+	stats.respondedCount++
+	if stats.respondedCount == 1 || elapsed < stats.minTime {
+		stats.minTime = elapsed
+	}
+	if elapsed > stats.maxTime {
+		stats.maxTime = elapsed
+	}
+	stats.totalResponseTime += elapsed
+	fmt.Printf("tcping %s:%s in %dms\n", address, port, elapsed)
+}
+
+func printTcpingStatistics(stats *Statistics) {
+	stats.Lock()
+	defer stats.Unlock()
+
+	fmt.Println("\n--- Tcping Statistics ---")
+	lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
+	fmt.Printf("%d tcp ping sent, %d tcp ping responsed, %.2f%% loss\n",
+		stats.sentCount, stats.respondedCount, lossRate)
+
+	if stats.respondedCount > 0 {
+		avgTime := stats.totalResponseTime / int64(stats.respondedCount)
+		fmt.Printf("min/avg/max = %dms/%dms/%dms\n",
+			stats.minTime, avgTime, stats.maxTime)
 	} else {
 		fmt.Println("No responses received.")
 	}
