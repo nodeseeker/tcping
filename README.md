@@ -208,7 +208,7 @@ CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "
 
 #### glibc版本问题
 
-**1.2.0版本已经解决了glibc依赖问题**
+**1.2.0及更新版本已经解决了glibc依赖问题**
 
 如果旧版本提示glibc找不到（如下），是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。**强烈推荐使用新版本**。
 ```
