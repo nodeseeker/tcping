@@ -12,7 +12,7 @@
 - 如果是Windows平台，建议向PATH 环境变量中添加工具位置
 - 如果是macOS平台，建议直接将文件移动到`/usr/local/bin`中
 
-![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/main/assets/tcping_releases.jpg)
+![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/tcping_releases.jpg)
 
 目前支持的多架构多平台如下：
 
