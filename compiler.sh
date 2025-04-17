@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # 源代码路径
-SRC_PATH="/path/to/main.go"
+SRC_PATH="./src/main.go"
 # 输出目录
-OUT_DIR="/path/to/bin"
+OUT_DIR="./bin"
 # 程序名
 APP_NAME="tcping"
 
@@ -25,6 +25,9 @@ PLATFORMS=(
 # 清理之前的编译产物
 rm -rf $OUT_DIR
 mkdir -p $OUT_DIR
+
+# 初始化 SHA256SUMS 文件
+> "$OUT_DIR/SHA256SUMS.txt"
 
 # 编译并压缩每个平台
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -48,6 +51,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
   # 压缩成 .zip 文件
   echo "压缩 ${OUT_FILE}..."
   zip -j "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" "$OUT_FILE"
+
+  # 计算 SHA256 值并追加到 SHA256SUMS.txt 中
+  sha256sum "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" >> "$OUT_DIR/SHA256SUMS.txt"
 
   # 清理中间文件
   rm "$OUT_FILE"

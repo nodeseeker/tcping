@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	version     = "v1.4.6"
+	version     = "v1.5.0"
 	dividerLine = "------------------------------------------------------------"
+	copyright   = "Copyright (c) 2025. All rights reserved."
+	programName = "TCPing"
 )
 
 type Statistics struct {
@@ -62,10 +64,10 @@ func exit(code int, format string, args ...interface{}) {
 }
 
 func printHelp() {
-	fmt.Printf(`TCPing %s - TCP Connection Tester
+	fmt.Printf(`%s %s - TCP Connection Tester
 
 Description:
-    TCPing tests TCP connectivity to target host and port.
+    %s tests TCP connectivity to target host and port.
 
 Usage: 
     tcping [options] <host> <port>
@@ -80,18 +82,20 @@ Options:
     -h              Show this help message
 
 Examples:
-    tcping google.com 80            # Basic usage
-    tcping -4 -n 5 3232235521 443   # IPv4 in decimal format
-    tcping 0xC0A80001 80            # IPv4 in hex format
-    tcping -w 2000 example.com 22   # 2 second timeout
-`, version)
-	os.Exit(0)
+    tcping google.com 80           # Basic usage
+    tcping -4 -n 5 8.8.8.8 443     # IPv4, 5 requests
+    tcping -w 2000 example.com 22  # 2 second timeout
+    tcping -4 -n 5 134744072 443   # IPv4 in decimal format, 8.8.8.8
+    tcping 0x08080808 80           # IPv4 in hex format, 8.8.8.8
+
+`, programName, version, programName)
+	exit(0, "")
 }
 
 func printVersion() {
-	fmt.Printf("TCPing version %s\n", version)
-	fmt.Println("Copyright (c) 2024. All rights reserved.")
-	os.Exit(0)
+	fmt.Printf("%s version %s\n", programName, version)
+	fmt.Println(copyright)
+	exit(0, "")
 }
 
 func validatePort(port string) error {
@@ -118,9 +122,7 @@ func parseNumericIPv4(address string) net.IP {
 
 	// Try hexadecimal (with or without 0x prefix)
 	addr := strings.ToLower(address)
-	if strings.HasPrefix(addr, "0x") {
-		addr = addr[2:]
-	}
+	addr = strings.TrimPrefix(addr, "0x")
 	if hexIP, err := strconv.ParseUint(addr, 16, 32); err == nil {
 		return net.IPv4(
 			byte(hexIP>>24),
@@ -134,6 +136,19 @@ func parseNumericIPv4(address string) net.IP {
 }
 
 func resolveAddress(address string, useIPv4, useIPv6 bool) string {
+	// 新增判断：如果使用 IPv6 且地址为数字（decimal 或 hex）格式，则直接报错提示
+	if useIPv6 {
+		if _, err := strconv.ParseUint(address, 10, 32); err == nil {
+			exit(1, "Decimal format is not supported for IPv6 addresses")
+		}
+		lowerAddr := strings.ToLower(address)
+		if strings.HasPrefix(lowerAddr, "0x") {
+			if _, err := strconv.ParseUint(strings.TrimPrefix(lowerAddr, "0x"), 16, 32); err == nil {
+				exit(1, "Hexadecimal format is not supported for IPv6 addresses")
+			}
+		}
+	}
+
 	// First try numeric IPv4 formats if IPv4 is requested or not explicitly IPv6
 	if useIPv4 || !useIPv6 {
 		if ip := parseNumericIPv4(address); ip != nil {
@@ -211,19 +226,19 @@ func pingOnce(address, port string, timeout int, stats *Statistics) {
 	stats.update(elapsed, success)
 
 	if !success {
-		fmt.Printf("TCPing to %s:%s - failed: %v\n", address, port, err)
+		fmt.Printf("%s to %s:%s - failed: %v\n", programName, address, port, err)
 		return
 	}
 
 	defer conn.Close()
-	fmt.Printf("TCPing to %s:%s - time=%.3fms\n", address, port, elapsed)
+	fmt.Printf("%s to %s:%s - time=%.3fms\n", programName, address, port, elapsed)
 }
 
-func printTcpingStatistics(stats *Statistics) {
+func printTCPingStatistics(stats *Statistics) {
 	stats.Lock()
 	defer stats.Unlock()
 
-	fmt.Printf("\n%s\nTCPing Statistics:\n%s\n", dividerLine, dividerLine)
+	fmt.Printf("\n%s\n%s Statistics:\n%s\n", dividerLine, programName, dividerLine)
 
 	if stats.sentCount > 0 {
 		lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
@@ -231,7 +246,7 @@ func printTcpingStatistics(stats *Statistics) {
 			stats.sentCount, stats.respondedCount, lossRate)
 
 		if stats.respondedCount > 0 {
-			fmt.Printf("    Latency:   min=%.3fms, avg=%.3fms, max=%.3fms\n",
+			fmt.Printf("    Latency:   min = %.3fms, avg = %.3fms, max = %.3fms\n",
 				stats.minTime, stats.avgTime, stats.maxTime)
 		}
 	}
@@ -275,12 +290,22 @@ func main() {
 	address = resolveAddress(address, *ipv4Flag || (!*ipv6Flag && isIPv4(address)),
 		*ipv6Flag || isIPv6(address))
 
-	fmt.Printf("TCPinging %s:%s...\n", address, port)
+	fmt.Printf("%sing %s:%s...\n", programName, address, port)
 	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 创建信号捕获通道
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+
+	// 使用 WaitGroup 来确保后台 goroutine 正确退出
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	go func() {
+		defer wg.Done()
+	pingLoop:
 		for i := 0; *countFlag == 0 || i < *countFlag; i++ {
 			select {
 			case <-ctx.Done():
@@ -288,24 +313,29 @@ func main() {
 			default:
 				pingOnce(address, port, *connectTimeoutFlag, stats)
 				if *countFlag != 0 && i == *countFlag-1 {
-					break
+					break pingLoop
 				}
-				time.Sleep(time.Duration(*timeoutFlag) * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Duration(*timeoutFlag) * time.Second):
+					// 继续下一次 ping
+				}
 			}
 		}
 		cancel()
 	}()
 
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
-
+	// 等待中断信号或完成
 	select {
 	case <-interrupt:
-		fmt.Println("\nTcping interrupted.")
+		fmt.Printf("\n%s interrupted.\n", programName)
 		cancel()
 	case <-ctx.Done():
-		fmt.Println("\nTcping completed.")
+		fmt.Printf("\n%s completed.\n", programName)
 	}
 
-	printTcpingStatistics(stats)
+	// 等待 goroutine 完成
+	wg.Wait()
+	printTCPingStatistics(stats)
 }
