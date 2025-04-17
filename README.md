@@ -5,16 +5,22 @@
 ## 使用教程
 ### 安装方法
 
-浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是`tcping` IP 为 `1.1.1.1` 的 `80` 端口，具体方法参考下面的使用方法和使用示例。如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中，这样就可以直接使用`tcping 1.1.1.1 80`而无需指定路径。
+浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是`tcping` IP 为 `1.1.1.1` 的 `80` 端口，具体方法参考下面的使用方法和使用示例。
+
+为了方便使用，建议将`tcping`文件移动到系统的`PATH环境变量`中或者`bin`目录中，这样就可以在任何目录下直接使用`tcping`命令，例如`tcping  1.1.1.1 80`：
+- 如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中
+- 如果是Windows平台，建议向PATH 环境变量中添加工具位置
+- 如果是macOS平台，建议直接将文件移动到`/usr/local/bin`中
 
 ![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/main/assets/tcping_releases.jpg)
 
 目前支持的多架构多平台如下：
 
-- amd64的Linux、Windows和MacOS
-- arm的Linux、Windows
-- arm64的Linux、Windows和MacOS
-- loongarch64的Linux
+```
+- linux系统：amd64/386/arm64/arm/loong64
+- windows系统：386/amd64/arm/arm64
+- macOS/darwin系统：amd64/arm64
+```
 
 ### 使用方法
 
@@ -29,9 +35,6 @@
 ```
 tcping [-4] [-6] [-n count] [-t timeout] address port
 ```
-
-### 常见问题
-
 
 ## 使用示例
 ### 1. tcping 一个IPv4地址和指定的80端口
@@ -99,9 +102,9 @@ min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 4. tcping 一个域名和指定的443端口，启用IPv6地址
-此处使用nodeseek.com(443端口对应https)，必须在地址和端口前加`-6`
+此处使用www.cloudflare.com(443端口对应https)，必须在地址和端口前加`-6`
 ```
-tcping -6 nodeseek.com 443
+tcping -6 www.cloudflare.com 443
 ```
 
 以下是响应
@@ -140,7 +143,7 @@ min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 6. tcping 一个IPv4地址和指定的80端口，限定tcping间隔时间次数
-此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-t 2`，3是指每连刺tcping之间为2秒钟，不写此指令则默认1秒
+此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-t 2`，2是指每两次tcping之间为2秒钟，不写此指令则默认1秒
 ```
 tcping -t 2 1.1.1.1 80
 ```
@@ -161,9 +164,9 @@ min/avg/max = 11ms/11ms/12ms
 ```
 
 ### 7. 综合演示tcping的所有功能
-此处使用nodeseek.com(443端口对应https)，tcping IPv6地址，每2秒钟tcping一次，一共tcping 5次
+此处使用www.cloudflare.com(443端口对应https)，tcping IPv6地址，每2秒钟tcping一次，一共tcping 5次
 ```
-tcping -6 -n 5 -t 2 nodeseek.com 443
+tcping -6 -n 5 -t 2 www.cloudflare.com 443
 ```
 以下是响应
 ```
@@ -206,12 +209,21 @@ CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "
 此外，也提供了批量编译脚本`complier.sh`，可以直接运行，但需要修改脚本中的目标平台和架构（`$GOOS`和`$GOARCH`变量）和源码路径（`$SRC_PATH`和`OUT_DIR`变量）。
 
 
-#### glibc版本问题
 
-**1.2.0及更新版本已经解决了glibc依赖问题**
+### 常见问题
 
-如果旧版本提示glibc找不到（如下），是因为系统的glibc版本过低，**请下载和使用带有`-static`后缀的版本**。**强烈推荐使用新版本**。
-```
-./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
-./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
-```
+1. **为什么需要使用tcping而不是普通的ping？**  
+   普通的ping使用ICMP协议，而tcping使用TCP协议。有些网络环境下可能ICMP报文被过滤或屏蔽，但TCP连接仍然可用。tcping可以测试特定端口的连通性和响应时间，这是普通ping无法做到的。
+
+2. **为什么有些域名无法进行IPv6测试？**  
+   这可能是因为该域名没有配置AAAA记录（IPv6解析记录）。可以先通过DNS查询工具确认域名是否支持IPv6解析。
+
+3. **出现"i/o timeout"表示什么？**  
+   这表示连接超时，可能原因包括：目标服务器未开放该端口、防火墙阻止了连接、网络连接问题或服务器负载过重。
+
+4. **glibc依赖问题**  
+   1.2.0及更新版本已经解决了glibc依赖问题，建议使用新版本。如果旧版本提示glibc找不到（如下），是因为系统的glibc版本过低，请下载和使用带有`-static`后缀的版本，但**强烈推荐使用新版本**。
+   ```
+   ./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
+   ./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
+   ```
