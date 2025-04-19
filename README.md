@@ -9,7 +9,7 @@
 
 为了方便使用，建议将`tcping`文件移动到系统的`PATH环境变量`中或者`bin`目录中，这样就可以在任何目录下直接使用`tcping`命令，例如`tcping  1.1.1.1 80`：
 - 如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中
-- 如果是Windows平台，建议向PATH 环境变量中添加工具位置或直接丢到 “C:\Windows\System32”目录
+- 如果是Windows平台，建议向PATH环境变量中添加工具位置或放置于`C:\Windows\System32`系统目录中
 - 如果是macOS平台，建议直接将文件移动到`/usr/local/bin`中
 
 ![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/tcping_releases.jpg)
