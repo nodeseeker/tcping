@@ -82,12 +82,12 @@ Options:
     -h              Show this help message
 
 Examples:
-    tcping google.com            # Basic usage (default port 80)
-    tcping google.com 80         # Basic usage with explicit port
-    tcping -4 -n 5 8.8.8.8 443   # IPv4, 5 requests
-    tcping -w 2000 example.com 22  # 2 second timeout
-    tcping -4 -n 5 134744072 443   # IPv4 in decimal format, 8.8.8.8
-    tcping 0x08080808 80           # IPv4 in hex format, 8.8.8.8
+    tcping google.com				# Basic usage (default port 80)
+    tcping google.com 80         	# Basic usage with explicit port
+    tcping -4 -n 5 8.8.8.8 443   	# IPv4, 5 requests
+    tcping -w 2000 example.com 22  	# 2 second timeout
+    tcping -4 -n 5 134744072 443   	# IPv4 in decimal format, 8.8.8.8
+    tcping 0x08080808 80           	# IPv4 in hex format, 8.8.8.8
 
 `, programName, version, programName)
 	exit(0, "")
