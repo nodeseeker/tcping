@@ -70,7 +70,7 @@ Description:
     %s tests TCP connectivity to target host and port.
 
 Usage: 
-    tcping [options] <host> <port>
+    tcping [options] <host> [port]      (default port: 80)
 
 Options:
     -4              Force IPv4
@@ -82,8 +82,9 @@ Options:
     -h              Show this help message
 
 Examples:
-    tcping google.com 80           # Basic usage
-    tcping -4 -n 5 8.8.8.8 443     # IPv4, 5 requests
+    tcping google.com            # Basic usage (default port 80)
+    tcping google.com 80         # Basic usage with explicit port
+    tcping -4 -n 5 8.8.8.8 443   # IPv4, 5 requests
     tcping -w 2000 example.com 22  # 2 second timeout
     tcping -4 -n 5 134744072 443   # IPv4 in decimal format, 8.8.8.8
     tcping 0x08080808 80           # IPv4 in hex format, 8.8.8.8
@@ -276,12 +277,15 @@ func main() {
 	}
 
 	args := flag.Args()
-	if len(args) < 2 {
-		exit(1, "Insufficient arguments\n\nUsage: tcping [options] <host> <port>\nTry 'tcping -h' for more information")
+	if len(args) < 1 {
+		exit(1, "Host argument is required\n\nUsage: tcping [options] <host> [port]\nTry 'tcping -h' for more information")
 	}
 
 	address := args[0]
-	port := args[1]
+	port := "80" // 默认端口为 80
+	if len(args) > 1 {
+		port = args[1]
+	}
 
 	if err := validatePort(port); err != nil {
 		exit(1, "%v", err)
