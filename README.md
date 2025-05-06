@@ -26,18 +26,42 @@
 
 以下为程序使用方法，**建议直接看使用示例**。
 
-1. address和port为必填，其中，address可以是IPv4地址、IPv6地址，或者域名。端口即为服务器已经开启的端口，比如SSH默认的22端口，网站常用的80端口和443端口。
+1. address是必填参数，可以是IPv4地址、IPv6地址，或者域名。port是可选参数，默认为80端口，也可以指定其他端口，如SSH默认的22端口，网站常用的443端口。
 2. -4 是当输入的address为域名的时候，强制tcping解析出来的IPv4地址。同理，-6 是当输入的address为域名的时候，强制tcping解析出来的IPv6地址。
 3. -n 是tcping的次数，后面必须跟一个正整数，比如 `-n 10`，就是tcping 10次，之后自动停止。默认一直tcping下去，只有`Ctrl C`才会停止。
 4. -t 是设置每两次tcping之间的间隔，后面必须跟一个正整数，比如`-t 2`，是每隔2秒钟tcping一次。默认每秒钟tcping一次。
 5. -w 是设置tcping的超时时间，后面必须跟一个正整数，比如`-w 1000`，是设置tcping的超时时间为500毫秒。默认超时时间为1000毫秒，即1秒钟。
 
 ```
-tcping [-4] [-6] [-n count] [-t timeout] address port
+tcping [-4] [-6] [-n count] [-t timeout] address [port]
 ```
 
 ## 使用示例
-### 1. tcping 一个IPv4地址和指定的80端口
+### 1. tcping 一个地址（使用默认80端口）
+此处使用cloudflare的1.1.1.1，不指定端口则默认使用80端口
+```
+tcping 1.1.1.1
+```
+
+以下是响应
+```
+TCPing 1.1.1.1:80...
+TCPing to 1.1.1.1:80 - time=11.123ms
+TCPing to 1.1.1.1:80 - time=12.456ms
+TCPing to 1.1.1.1:80 - time=10.789ms
+TCPing to 1.1.1.1:80 - time=11.345ms
+^C # 此处使用了Ctrl C停止tcping
+TCPing interrupted.
+
+------------------------------------------------------------
+TCPing Statistics:
+------------------------------------------------------------
+    Requests:  4 sent, 4 received, 0.0% loss
+    Latency:   min = 10.789ms, avg = 11.428ms, max = 12.456ms
+------------------------------------------------------------
+```
+
+### 2. tcping 一个IPv4地址和指定的80端口
 此处使用cloudflare的1.1.1.1 (80端口对应http)
 ```
 tcping 1.1.1.1 80
@@ -58,7 +82,7 @@ Ping interrupted.
 min/avg/max = 11ms/11ms/12ms # 最小tcping时间/平均tcping时间/最大tcping时间
 ```
 
-### 2. tcping 一个IPv6地址和指定的80端口
+### 3. tcping 一个IPv6地址和指定的80端口
 此处使用cloudflare的2606:4700:4700::1111(80端口对应http)
 ```
 tcping 2606:4700:4700::1111 80 
@@ -79,7 +103,7 @@ Ping interrupted.
 min/avg/max = 12ms/17ms/29ms
 ```
 
-### 3. tcping 一个域名和指定的443端口，启用IPv4地址
+### 4. tcping 一个域名和指定的443端口，启用IPv4地址
 此处使用nodeseek.com(443端口对应https)
 ```
 tcping nodeseek.com 443
@@ -101,7 +125,7 @@ Ping interrupted.
 min/avg/max = 11ms/11ms/12ms
 ```
 
-### 4. tcping 一个域名和指定的443端口，启用IPv6地址
+### 5. tcping 一个域名和指定的443端口，启用IPv6地址
 此处使用www.cloudflare.com(443端口对应https)，必须在地址和端口前加`-6`
 ```
 tcping -6 www.cloudflare.com 443
@@ -122,7 +146,7 @@ Ping interrupted.
 min/avg/max = 11ms/11ms/12ms
 ```
 
-### 5. tcping 一个IPv4地址和指定的80端口，限定tcping次数
+### 6. tcping 一个IPv4地址和指定的80端口，限定tcping次数
 此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-n 3`，3是指只tcping3次即自动停止，不写此指令则默认一直tcping
 ```
 tcping -n 3 1.1.1.1 80
@@ -142,7 +166,7 @@ Ping stopped. # 此处到了设定次数，自动停止
 min/avg/max = 11ms/11ms/12ms
 ```
 
-### 6. tcping 一个IPv4地址和指定的80端口，限定tcping间隔时间次数
+### 7. tcping 一个IPv4地址和指定的80端口，限定tcping间隔时间次数
 此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-t 2`，2是指每两次tcping之间为2秒钟，不写此指令则默认1秒
 ```
 tcping -t 2 1.1.1.1 80
@@ -163,7 +187,7 @@ Ping interrupted.
 min/avg/max = 11ms/11ms/12ms
 ```
 
-### 7. 综合演示tcping的所有功能
+### 8. 综合演示tcping的所有功能
 此处使用www.cloudflare.com(443端口对应https)，tcping IPv6地址，每2秒钟tcping一次，一共tcping 5次
 ```
 tcping -6 -n 5 -t 2 www.cloudflare.com 443
@@ -184,7 +208,7 @@ Ping stopped.
 min/avg/max = 11ms/11ms/12ms
 ```
 
-### 8. tcping 一个IPv4地址和指定的80端口，设置超时时间
+### 9. tcping 一个IPv4地址和指定的80端口，设置超时时间
 此处使用cloudflare的的1.1.1.1 (80端口对应http)，在地址和端口前加`-w 100`，100是指tcping超时时间为100毫秒。由于服务器距离较远，所以超时。主要用于给测试网络延迟设置一个上限。
 ```
 PS C:\Users\Imes> tcping -w 100 1.1.1.1 80
