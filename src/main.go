@@ -311,20 +311,25 @@ func main() {
 		defer wg.Done()
 	pingLoop:
 		for i := 0; *countFlag == 0 || i < *countFlag; i++ {
+			// 首先检查是否已收到中断信号
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				pingOnce(address, port, *connectTimeoutFlag, stats)
-				if *countFlag != 0 && i == *countFlag-1 {
-					break pingLoop
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(time.Duration(*timeoutFlag) * time.Second):
-					// 继续下一次 ping
-				}
+				// 继续执行
+			}
+
+			pingOnce(address, port, *connectTimeoutFlag, stats)
+
+			if *countFlag != 0 && i == *countFlag-1 {
+				break pingLoop
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Duration(*timeoutFlag) * time.Second):
+				// 继续下一次 ping
 			}
 		}
 		cancel()
