@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version     = "v1.6.1"
+	version     = "v1.6.2"
 	dividerLine = "------------------------------------------------------------"
 	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
@@ -218,9 +218,15 @@ func isIPv6(address string) bool {
 	return strings.Count(address, ":") >= 2
 }
 
-func pingOnce(address, port string, timeout int, stats *Statistics) {
+// 修改函数签名，添加context参数
+func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics) {
+	// 创建可取消的连接上下文
+	dialCtx, dialCancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
+	defer dialCancel()
+
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", address+":"+port, time.Duration(timeout)*time.Millisecond)
+	var d net.Dialer
+	conn, err := d.DialContext(dialCtx, "tcp", address+":"+port)
 	elapsed := float64(time.Since(start).Microseconds()) / 1000.0
 
 	success := err == nil
@@ -319,7 +325,8 @@ func main() {
 				// 继续执行
 			}
 
-			pingOnce(address, port, *connectTimeoutFlag, stats)
+			// 更新函数调用，传递context
+			pingOnce(ctx, address, port, *connectTimeoutFlag, stats)
 
 			if *countFlag != 0 && i == *countFlag-1 {
 				break pingLoop
