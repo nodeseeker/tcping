@@ -1,13 +1,13 @@
-# tcping
+# TCPing
 
-一款基于Golang的TCP Ping工具，支持IPv4、IPv6和域名，以及自定义端口、次数和间隔时间。
+一款基于Golang的TCP Ping工具，支持IPv4、IPv6和域名，以及自定义端口、次数和间隔时间。支持彩色输出和详细的连接信息展示。
 
 ## 使用教程
 ### 安装方法
 
-浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可，如Linux平台 `./tcp 1.1.1.1 80 ` 就是`tcping` IP 为 `1.1.1.1` 的 `80` 端口，具体方法参考下面的使用方法和使用示例。
+浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可。
 
-为了方便使用，建议将`tcping`文件移动到系统的`PATH环境变量`中或者`bin`目录中，这样就可以在任何目录下直接使用`tcping`命令，例如`tcping  1.1.1.1 80`：
+为了方便使用，建议将`tcping`文件移动到系统的`PATH环境变量`中或者`bin`目录中，这样就可以在任何目录下直接使用`tcping`命令：
 - 如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中
 - 如果是Windows平台，建议向PATH环境变量中添加工具位置或放置于`C:\Windows\System32`系统目录中
 - 如果是macOS平台，建议直接将文件移动到`/usr/local/bin`中
@@ -24,230 +24,171 @@
 
 ### 使用方法
 
-以下为程序使用方法，**建议直接看使用示例**。
-
-1. address是必填参数，可以是IPv4地址、IPv6地址，或者域名。port是可选参数，默认为80端口，也可以指定其他端口，如SSH默认的22端口，网站常用的443端口。
-2. -4 是当输入的address为域名的时候，强制tcping解析出来的IPv4地址。同理，-6 是当输入的address为域名的时候，强制tcping解析出来的IPv6地址。
-3. -n 是tcping的次数，后面必须跟一个正整数，比如 `-n 10`，就是tcping 10次，之后自动停止。默认一直tcping下去，只有`Ctrl C`才会停止。
-4. -t 是设置每两次tcping之间的间隔，后面必须跟一个正整数，比如`-t 2`，是每隔2秒钟tcping一次。默认每秒钟tcping一次。
-5. -w 是设置tcping的超时时间，后面必须跟一个正整数，比如`-w 1000`，是设置tcping的超时时间为500毫秒。默认超时时间为1000毫秒，即1秒钟。
+**TCPing** 工具提供了多种选项来满足不同的网络测试需求：
 
 ```
-tcping [-4] [-6] [-n count] [-t timeout] address [port]
+tcping [选项] <主机> [端口]
 ```
+
+#### 命令行选项
+
+| 短选项 | 长选项      | 描述                             | 默认值    |
+|------|------------|----------------------------------|----------|
+| -4   | --ipv4     | 强制使用 IPv4                      | 自动检测   |
+| -6   | --ipv6     | 强制使用 IPv6                      | 自动检测   |
+| -n   | --count    | 发送请求的次数                      | 无限      |
+| -p   | --port     | 指定要连接的端口                    | 80       |
+| -t   | --interval | 请求之间的间隔（秒）                 | 1秒       |
+| -w   | --timeout  | 连接超时（毫秒）                    | 1000毫秒  |
+| -c   | --color    | 启用彩色输出                        | 关闭      |
+| -v   | --verbose  | 启用详细模式，显示更多连接信息         | 关闭      |
+| -V   | --version  | 显示版本信息                        | -        |
+| -h   | --help     | 显示帮助信息                        | -        |
+
+#### 特殊地址格式支持
+
+TCPing 支持多种IPv4地址格式：
+- 标准点分十进制格式 (如 `8.8.8.8`)
+- 十进制整数格式 (如 `134744072` 等同于 `8.8.8.8`)
+- 十六进制格式 (如 `0x08080808` 等同于 `8.8.8.8`)
 
 ## 使用示例
-### 1. tcping 一个地址（使用默认80端口）
-此处使用cloudflare的1.1.1.1，不指定端口则默认使用80端口
-```
-tcping 1.1.1.1
-```
 
-以下是响应
-```
-TCPing 1.1.1.1:80...
-TCPing to 1.1.1.1:80 - time=11.123ms
-TCPing to 1.1.1.1:80 - time=12.456ms
-TCPing to 1.1.1.1:80 - time=10.789ms
-TCPing to 1.1.1.1:80 - time=11.345ms
-^C # 此处使用了Ctrl C停止tcping
-TCPing interrupted.
+### 基本用法
 
-------------------------------------------------------------
-TCPing Statistics:
-------------------------------------------------------------
-    Requests:  4 sent, 4 received, 0.0% loss
-    Latency:   min = 10.789ms, avg = 11.428ms, max = 12.456ms
-------------------------------------------------------------
-```
+测试 Google DNS 服务器的 TCP 连接：
 
-### 2. tcping 一个IPv4地址和指定的80端口
-此处使用cloudflare的1.1.1.1 (80端口对应http)
 ```
-tcping 1.1.1.1 80
-```
-
-以下是响应
-```
-Pinging 1.1.1.1:80...
-tcping 1.1.1.1:80 in 11ms
-tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 11ms
-^C # 此处使用了Ctrl C停止tcping
-Ping interrupted.
-
---- Tcping Statistics ---
-4 tcp ping sent, 4 tcp ping responsed, 0.00% loss # 总尝试次数/成功次数/失败率
-min/avg/max = 11ms/11ms/12ms # 最小tcping时间/平均tcping时间/最大tcping时间
-```
-
-### 3. tcping 一个IPv6地址和指定的80端口
-此处使用cloudflare的2606:4700:4700::1111(80端口对应http)
-```
-tcping 2606:4700:4700::1111 80 
-```
-
-以下是响应
-```
-Pinging [2606:4700:4700::1111]:80...
-Failed to connect to [2606:4700:4700::1111]:80: dial tcp [2606:4700:4700::1111]:80: i/o timeout # tcping失败
-tcping [2606:4700:4700::1111]:80 in 29ms
-tcping [2606:4700:4700::1111]:80 in 12ms
-tcping [2606:4700:4700::1111]:80 in 12ms
+$ tcping 8.8.8.8 53
+正在对 8.8.8.8 (IPv4 - 8.8.8.8) 端口 53 执行 TCP Ping
+从 8.8.8.8:53 收到响应: seq=0 time=9.36ms
+从 8.8.8.8:53 收到响应: seq=1 time=8.40ms
+从 8.8.8.8:53 收到响应: seq=2 time=8.91ms
 ^C
-Ping interrupted.
+操作被中断。
 
---- Tcping Statistics ---
-4 tcp ping sent, 3 tcp ping responsed, 25.00% loss # 4个tcping中有一个失败，所以失败率为25%
-min/avg/max = 12ms/17ms/29ms
-```
-
-### 4. tcping 一个域名和指定的443端口，启用IPv4地址
-此处使用nodeseek.com(443端口对应https)
-```
-tcping nodeseek.com 443
-tcping -4 nodeseek.com 443 # 这两个命令是等效的，默认使用IPv4地址
+--- 目标主机 TCP ping 统计 ---
+已发送 = 3, 已接收 = 3, 丢失 = 0 (0.0% 丢失)
+往返时间(RTT): 最小 = 8.40ms, 最大 = 9.36ms, 平均 = 8.89ms
 ```
 
-以下是响应
+### 指定次数和间隔
+
+发送5次请求，每次间隔2秒：
+
 ```
-Pinging 172.67.70.75:443...
-tcping 172.67.70.75:443 in 11ms
-tcping 172.67.70.75:443 in 12ms
-tcping 172.67.70.75:443 in 11ms
-tcping 172.67.70.75:443 in 12ms
+$ tcping -n 5 -t 2 example.com 443
+正在对 example.com (IPv4 - 93.184.216.34) 端口 443 执行 TCP Ping
+从 93.184.216.34:443 收到响应: seq=0 time=142.93ms
+从 93.184.216.34:443 收到响应: seq=1 time=138.45ms
+从 93.184.216.34:443 收到响应: seq=2 time=140.12ms
+从 93.184.216.34:443 收到响应: seq=3 time=137.68ms
+从 93.184.216.34:443 收到响应: seq=4 time=139.74ms
+
+--- 目标主机 TCP ping 统计 ---
+已发送 = 5, 已接收 = 5, 丢失 = 0 (0.0% 丢失)
+往返时间(RTT): 最小 = 137.68ms, 最大 = 142.93ms, 平均 = 139.78ms
+```
+
+### 强制使用IPv6
+
+测试IPv6连接：
+
+```
+$ tcping -6 ipv6.google.com 443
+正在对 ipv6.google.com (IPv6 - 2404:6800:4003:c04::8b) 端口 443 执行 TCP Ping
+从 2404:6800:4003:c04::8b:443 收到响应: seq=0 time=36.24ms
+从 2404:6800:4003:c04::8b:443 收到响应: seq=1 time=35.87ms
 ^C
-Ping interrupted.
+操作被中断。
 
---- Tcping Statistics ---
-4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
-min/avg/max = 11ms/11ms/12ms
-```
-
-### 5. tcping 一个域名和指定的443端口，启用IPv6地址
-此处使用www.cloudflare.com(443端口对应https)，必须在地址和端口前加`-6`
-```
-tcping -6 www.cloudflare.com 443
+--- 目标主机 TCP ping 统计 ---
+已发送 = 2, 已接收 = 2, 丢失 = 0 (0.0% 丢失)
+往返时间(RTT): 最小 = 35.87ms, 最大 = 36.24ms, 平均 = 36.06ms
 ```
 
-以下是响应
+### 详细模式和彩色输出
+
+启用详细信息显示和彩色输出：
+
 ```
-Pinging [2606:4700:20::ac43:464b]:443...
-tcping [2606:4700:20::ac43:464b]:443 in 12ms
-tcping [2606:4700:20::ac43:464b]:443 in 12ms
-tcping [2606:4700:20::ac43:464b]:443 in 11ms
-tcping [2606:4700:20::ac43:464b]:443 in 12ms
+$ tcping -c -v github.com 443
+正在对 github.com (IPv4 - 20.205.243.166) 端口 443 执行 TCP Ping
+从 20.205.243.166:443 收到响应: seq=0 time=138.45ms
+  详细信息: 本地地址=192.168.1.100:50123, 远程地址=20.205.243.166:443
+从 20.205.243.166:443 收到响应: seq=1 time=140.12ms
+  详细信息: 本地地址=192.168.1.100:50124, 远程地址=20.205.243.166:443
 ^C
-Ping interrupted.
+操作被中断。
 
---- Tcping Statistics ---
-4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
-min/avg/max = 11ms/11ms/12ms
-```
-
-### 6. tcping 一个IPv4地址和指定的80端口，限定tcping次数
-此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-n 3`，3是指只tcping3次即自动停止，不写此指令则默认一直tcping
-```
-tcping -n 3 1.1.1.1 80
+--- 目标主机 TCP ping 统计 ---
+已发送 = 2, 已接收 = 2, 丢失 = 0 (0.0% 丢失)
+往返时间(RTT): 最小 = 138.45ms, 最大 = 140.12ms, 平均 = 139.29ms
 ```
 
-以下是响应
-```
-Pinging 1.1.1.1:80...
-tcping 1.1.1.1:80 in 11ms
-tcping 1.1.1.1:80 in 11ms
-tcping 1.1.1.1:80 in 12ms
+### 自定义超时时间
 
-Ping stopped. # 此处到了设定次数，自动停止
+设置短超时时间（例如100毫秒）以快速诊断问题：
 
---- Tcping Statistics ---
-3 tcp ping sent, 3 tcp ping responsed, 0.00% loss
-min/avg/max = 11ms/11ms/12ms
 ```
-
-### 7. tcping 一个IPv4地址和指定的80端口，限定tcping间隔时间次数
-此处使用cloudflare的1.1.1.1 (80端口对应http)，必须在地址和端口前加`-t 2`，2是指每两次tcping之间为2秒钟，不写此指令则默认1秒
-```
-tcping -t 2 1.1.1.1 80
-```
-
-以下是响应
-```
-Pinging 1.1.1.1:80...
-tcping 1.1.1.1:80 in 12ms
-tcping 1.1.1.1:80 in 11ms
-tcping 1.1.1.1:80 in 11ms
-tcping 1.1.1.1:80 in 12ms
+$ tcping -w 100 slow-server.example.com 80
+正在对 slow-server.example.com (IPv4 - 203.0.113.1) 端口 80 执行 TCP Ping
+TCP连接失败 203.0.113.1:80: seq=0 错误=连接超时
+TCP连接失败 203.0.113.1:80: seq=1 错误=连接超时
 ^C
-Ping interrupted.
+操作被中断。
 
---- Tcping Statistics ---
-4 tcp ping sent, 4 tcp ping responsed, 0.00% loss
-min/avg/max = 11ms/11ms/12ms
+--- 目标主机 TCP ping 统计 ---
+已发送 = 2, 已接收 = 0, 丢失 = 2 (100.0% 丢失)
 ```
 
-### 8. 综合演示tcping的所有功能
-此处使用www.cloudflare.com(443端口对应https)，tcping IPv6地址，每2秒钟tcping一次，一共tcping 5次
-```
-tcping -6 -n 5 -t 2 www.cloudflare.com 443
-```
-以下是响应
-```
-Pinging [2606:4700:20::681a:b48]:443...
-tcping [2606:4700:20::681a:b48]:443 in 11ms
-tcping [2606:4700:20::681a:b48]:443 in 12ms
-tcping [2606:4700:20::681a:b48]:443 in 12ms
-tcping [2606:4700:20::681a:b48]:443 in 12ms
-tcping [2606:4700:20::681a:b48]:443 in 12ms
+### 高级用法
 
-Ping stopped.
+使用十进制整数IP地址格式：
 
---- Tcping Statistics ---
-5 tcp ping sent, 5 tcp ping responsed, 0.00% loss
-min/avg/max = 11ms/11ms/12ms
+```
+$ tcping 134744072 443
+正在对 134744072 (IPv4 - 8.8.8.8) 端口 443 执行 TCP Ping
+...
 ```
 
-### 9. tcping 一个IPv4地址和指定的80端口，设置超时时间
-此处使用cloudflare的的1.1.1.1 (80端口对应http)，在地址和端口前加`-w 100`，100是指tcping超时时间为100毫秒。由于服务器距离较远，所以超时。主要用于给测试网络延迟设置一个上限。
+使用十六进制IP地址格式：
+
 ```
-PS C:\Users\Imes> tcping -w 100 1.1.1.1 80
-Pinging 1.1.1.1:80...
-Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
-Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
-Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
-Failed to connect to 1.1.1.1:80: dial tcp 1.1.1.1:80: i/o timeout
-
-Tcping interrupted.
-
---- Tcping Statistics ---
-4 tcp ping sent, 0 tcp ping responsed, 100.00% loss
-No responses received.
+$ tcping 0x08080808 80
+正在对 0x08080808 (IPv4 - 8.8.8.8) 端口 80 执行 TCP Ping
+...
 ```
 
-#### 自己编译
-程序使用纯golang编写，可以自己编译，编译方法如下，`$GOOS`是目标操作系统，`$GOARCH`是目标CPU架构，`$SRC_PATH`是源代码路径，`$OUT_FILE`是输出文件路径。
-```
-CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "$OUT_FILE" $SRC_PATH
-```
-此外，也提供了批量编译脚本`complier.sh`，可以直接运行，但需要修改脚本中的目标平台和架构（`$GOOS`和`$GOARCH`变量）和源码路径（`$SRC_PATH`和`OUT_DIR`变量）。
+## 常见问题
 
-
-
-### 常见问题
-
-1. **为什么需要使用tcping而不是普通的ping？**  
-   普通的ping使用ICMP协议，而tcping使用TCP协议。有些网络环境下可能ICMP报文被过滤或屏蔽，但TCP连接仍然可用。tcping可以测试特定端口的连通性和响应时间，这是普通ping无法做到的。
+1. **为什么需要使用TCPing而不是普通的ping？**  
+   普通的ping使用ICMP协议，而TCPing使用TCP协议。有些网络环境下可能ICMP报文被过滤或屏蔽，但TCP连接仍然可用。TCPing可以测试特定端口的连通性和响应时间，这是普通ping无法做到的。
 
 2. **为什么有些域名无法进行IPv6测试？**  
    这可能是因为该域名没有配置AAAA记录（IPv6解析记录）。可以先通过DNS查询工具确认域名是否支持IPv6解析。
 
-3. **出现"i/o timeout"表示什么？**  
-   这表示连接超时，可能原因包括：目标服务器未开放该端口、防火墙阻止了连接、网络连接问题或服务器负载过重。
+3. **彩色输出功能在某些终端不起作用？**  
+   某些终端（特别是Windows的cmd）可能不支持ANSI颜色代码。在这些环境下，可能需要使用支持ANSI的终端（如Windows Terminal）或不使用 `-c` 选项。
 
-4. **glibc依赖问题**  
-   1.2.0及更新版本已经解决了glibc依赖问题，建议使用新版本。如果旧版本提示glibc找不到（如下），是因为系统的glibc版本过低，请下载和使用带有`-static`后缀的版本，但**强烈推荐使用新版本**。
-   ```
-   ./tcping: /lib64/libc.so.6: version GLIBC_2.34' not found (required by ./tcping)
-   ./tcping: /lib64/libc.so.6: version GLIBC_2.32' not found (required by ./tcping)
-   ```
+4. **程序在高负载网络下测试结果不准确？**  
+   高负载网络环境可能导致TCP连接建立时间变长，这会影响测试结果。可以考虑多次测试并关注统计结果而非单次测试值。
+
+5. **如何使用TCPing进行长期监控？**  
+   可以使用 `-n` 参数设置一个大的值（如 `-n 1000`）并将输出重定向到文件，例如：`tcping -n 1000 example.com 443 > results.log`
+
+## 自行编译
+
+程序使用纯Golang编写，可以自己编译，编译方法如下：
+
+```bash
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "$OUT_FILE" $SRC_PATH
+```
+
+其中：
+- `$GOOS` 是目标操作系统（如 linux, windows, darwin）
+- `$GOARCH` 是目标CPU架构（如 amd64, 386, arm64）
+- `$SRC_PATH` 是源代码路径
+- `$OUT_FILE` 是输出文件路径
+
+此外，也提供了批量编译脚本`complier.sh`，可以直接运行，但需要修改脚本中的目标平台和架构。
