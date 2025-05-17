@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	version     = "v1.6.4" // 更新版本号
+	version     = "v1.6.5"
 	dividerLine = "------------------------------------------------------------"
-	copyright   = "Copyright (c) 2023. All rights reserved." // 更新版权年份
+	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
 )
 
@@ -67,7 +67,7 @@ type Options struct {
 	VerboseMode bool
 	ShowVersion bool
 	ShowHelp    bool
-	Port        int // 新增: 通过-p参数指定的端口
+	Port        int
 }
 
 func exit(code int, format string, args ...interface{}) {
@@ -87,26 +87,26 @@ func printHelp() {
     tcping [选项] <主机> [端口]      (默认端口: 80)
 
 选项:
-    -4              强制使用 IPv4
-    -6              强制使用 IPv6
-    -n <次数>       发送请求的次数 (默认: 无限)
-    -p <端口>       指定要连接的端口 (默认: 80)
-    -t <秒>         请求之间的间隔 (默认: 1秒)
-    -w <毫秒>       连接超时 (默认: 1000毫秒)
-    -c              启用彩色输出
-    -V              启用详细模式，显示更多连接信息
-    -v              显示版本信息
-    -h              显示此帮助信息
+    -4, --ipv4              强制使用 IPv4
+    -6, --ipv6              强制使用 IPv6
+    -n, --count <次数>      发送请求的次数 (默认: 无限)
+    -p, --port <端口>       指定要连接的端口 (默认: 80)
+    -t, --interval <秒>     请求之间的间隔 (默认: 1秒)
+    -w, --timeout <毫秒>    连接超时 (默认: 1000毫秒)
+    -c, --color             启用彩色输出
+    -v, --verbose           启用详细模式，显示更多连接信息
+    -V, --version           显示版本信息
+    -h, --help              显示此帮助信息
 
 示例:
-    tcping google.com                # 基本用法 (默认端口 80)
-    tcping google.com 80             # 基本用法指定端口
-    tcping -p 443 google.com         # 使用-p参数指定端口
-    tcping -4 -n 5 8.8.8.8 443       # IPv4, 5次请求
-    tcping -w 2000 example.com 22    # 2秒超时
-    tcping -4 -n 5 134744072 443     # 十进制IPv4格式, 8.8.8.8
-    tcping 0x08080808 80             # 十六进制IPv4格式, 8.8.8.8
-    tcping -c -V example.com 443     # 彩色输出和详细模式
+    tcping google.com                	# 基本用法 (默认端口 80)
+    tcping google.com 80             	# 基本用法指定端口
+    tcping -p 443 google.com         	# 使用-p参数指定端口
+    tcping -4 -n 5 8.8.8.8 443       	# IPv4, 5次请求
+    tcping -w 2000 example.com 22    	# 2秒超时
+    tcping -4 -n 5 134744072 443     	# 十进制IPv4格式, 8.8.8.8
+    tcping 0x08080808 80             	# 十六进制IPv4格式, 8.8.8.8
+    tcping -c -v example.com 443     	# 彩色输出和详细模式
 
 `, programName, version, programName)
 	exit(0, "")
@@ -335,22 +335,58 @@ func infoText(text string, useColor bool) string {
 	return colorize(text, "36", useColor) // 青色
 }
 
+// 处理短选项和长选项映射的函数
+func setupFlags(opts *Options) {
+	// 定义用于检测哪些选项被设置的变量
+	var ipv4Flag, ipv6Flag, colorFlag, verboseFlag, versionFlag, helpFlag bool
+	var countFlag, intervalFlag, timeoutFlag, portFlag int
+
+	// 定义短选项
+	flag.BoolVar(&ipv4Flag, "4", false, "使用 IPv4 地址")
+	flag.BoolVar(&ipv6Flag, "6", false, "使用 IPv6 地址")
+	flag.IntVar(&countFlag, "n", 0, "发送请求次数 (默认: 无限)")
+	flag.IntVar(&intervalFlag, "t", 1, "请求间隔（秒）")
+	flag.IntVar(&timeoutFlag, "w", 1000, "连接超时（毫秒）")
+	flag.IntVar(&portFlag, "p", 0, "指定要连接的端口 (默认: 80)")
+	flag.BoolVar(&colorFlag, "c", false, "启用彩色输出")
+	flag.BoolVar(&verboseFlag, "v", false, "启用详细模式") // 修改为v表示详细模式
+	flag.BoolVar(&versionFlag, "V", false, "显示版本信息") // 修改为V表示版本信息
+	flag.BoolVar(&helpFlag, "h", false, "显示帮助信息")
+
+	// 定义等价的长选项
+	flag.BoolVar(&ipv4Flag, "ipv4", false, "使用 IPv4 地址")
+	flag.BoolVar(&ipv6Flag, "ipv6", false, "使用 IPv6 地址")
+	flag.IntVar(&countFlag, "count", 0, "发送请求次数 (默认: 无限)")
+	flag.IntVar(&intervalFlag, "interval", 1, "请求间隔（秒）")
+	flag.IntVar(&timeoutFlag, "timeout", 1000, "连接超时（毫秒）")
+	flag.IntVar(&portFlag, "port", 0, "指定要连接的端口 (默认: 80)")
+	flag.BoolVar(&colorFlag, "color", false, "启用彩色输出")
+	flag.BoolVar(&verboseFlag, "verbose", false, "启用详细模式") // 确保长选项也与短选项对应
+	flag.BoolVar(&versionFlag, "version", false, "显示版本信息")
+	flag.BoolVar(&helpFlag, "help", false, "显示帮助信息")
+
+	// 解析命令行参数
+	flag.Parse()
+
+	// 设置选项结构
+	opts.UseIPv4 = ipv4Flag
+	opts.UseIPv6 = ipv6Flag
+	opts.Count = countFlag
+	opts.Interval = intervalFlag
+	opts.Timeout = timeoutFlag
+	opts.Port = portFlag
+	opts.ColorOutput = colorFlag
+	opts.VerboseMode = verboseFlag
+	opts.ShowVersion = versionFlag
+	opts.ShowHelp = helpFlag
+}
+
 func main() {
 	// 创建选项结构
 	opts := &Options{}
 
-	// 解析命令行参数
-	flag.BoolVar(&opts.UseIPv4, "4", false, "使用 IPv4 地址")
-	flag.BoolVar(&opts.UseIPv6, "6", false, "使用 IPv6 地址")
-	flag.IntVar(&opts.Count, "n", 0, "发送请求次数 (默认: 无限)")
-	flag.IntVar(&opts.Interval, "t", 1, "请求间隔（秒）")
-	flag.IntVar(&opts.Timeout, "w", 1000, "连接超时（毫秒）")
-	flag.IntVar(&opts.Port, "p", 0, "指定要连接的端口 (默认: 80)")
-	flag.BoolVar(&opts.ColorOutput, "c", false, "启用彩色输出")
-	flag.BoolVar(&opts.VerboseMode, "V", false, "启用详细模式")
-	flag.BoolVar(&opts.ShowVersion, "v", false, "显示版本信息")
-	flag.BoolVar(&opts.ShowHelp, "h", false, "显示帮助信息")
-	flag.Parse()
+	// 设置和解析命令行参数
+	setupFlags(opts)
 
 	// 参数验证
 	if opts.ShowHelp {
