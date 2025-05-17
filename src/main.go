@@ -102,10 +102,10 @@ func printVersion() {
 func validatePort(port string) error {
 	portNum, err := strconv.Atoi(port)
 	if err != nil {
-		return fmt.Errorf("invalid port number format")
+		return fmt.Errorf("端口号格式无效")
 	}
 	if portNum <= 0 || portNum > 65535 {
-		return fmt.Errorf("port number must be between 1 and 65535")
+		return fmt.Errorf("端口号必须在 1 到 65535 之间")
 	}
 	return nil
 }
@@ -140,12 +140,12 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) string {
 	// 新增判断：如果使用 IPv6 且地址为数字（decimal 或 hex）格式，则直接报错提示
 	if useIPv6 {
 		if _, err := strconv.ParseUint(address, 10, 32); err == nil {
-			exit(1, "Decimal format is not supported for IPv6 addresses")
+			exit(1, "IPv6 地址不支持十进制格式")
 		}
 		lowerAddr := strings.ToLower(address)
 		if strings.HasPrefix(lowerAddr, "0x") {
 			if _, err := strconv.ParseUint(strings.TrimPrefix(lowerAddr, "0x"), 16, 32); err == nil {
-				exit(1, "Hexadecimal format is not supported for IPv6 addresses")
+				exit(1, "IPv6 地址不支持十六进制格式")
 			}
 		}
 	}
@@ -161,10 +161,10 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) string {
 	if ip := net.ParseIP(address); ip != nil {
 		isV4 := ip.To4() != nil
 		if useIPv4 && !isV4 {
-			exit(1, "Address %s is not an IPv4 address", address)
+			exit(1, "地址 %s 不是 IPv4 地址", address)
 		}
 		if useIPv6 && isV4 {
-			exit(1, "Address %s is not an IPv6 address", address)
+			exit(1, "地址 %s 不是 IPv6 地址", address)
 		}
 		if !isV4 {
 			return "[" + ip.String() + "]"
@@ -175,11 +175,11 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) string {
 	// Finally try DNS resolution
 	ipList, err := net.LookupIP(address)
 	if err != nil {
-		exit(1, "Failed to resolve %s: %v", address, err)
+		exit(1, "解析 %s 失败: %v", address, err)
 	}
 
 	if len(ipList) == 0 {
-		exit(1, "No IP addresses found for %s", address)
+		exit(1, "未找到 %s 的 IP 地址", address)
 	}
 
 	if useIPv4 {
@@ -188,7 +188,7 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) string {
 				return ip.String()
 			}
 		}
-		exit(1, "No IPv4 address found for %s", address)
+		exit(1, "未找到 %s 的 IPv4 地址", address)
 	}
 
 	if useIPv6 {
@@ -197,7 +197,7 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) string {
 				return "[" + ip.String() + "]"
 			}
 		}
-		exit(1, "No IPv6 address found for %s", address)
+		exit(1, "未找到 %s 的 IPv6 地址", address)
 	}
 
 	ip := ipList[0]
@@ -240,7 +240,7 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	stats.update(elapsed, success)
 
 	if !success {
-		fmt.Printf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", address, port, seq, err)
+		fmt.Printf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", ip, port, seq, err)
 		return
 	}
 
@@ -267,13 +267,13 @@ func printTCPingStatistics(stats *Statistics) {
 }
 
 func main() {
-	ipv4Flag := flag.Bool("4", false, "Ping IPv4 address")
-	ipv6Flag := flag.Bool("6", false, "Ping IPv6 address")
-	countFlag := flag.Int("n", 0, "Number of pings (default: infinite)")
-	timeoutFlag := flag.Int("t", 1, "Time interval between pings in seconds")
-	versionFlag := flag.Bool("v", false, "Show version information")
-	helpFlag := flag.Bool("h", false, "Show help information")
-	connectTimeoutFlag := flag.Int("w", 1000, "Connection timeout in milliseconds")
+	ipv4Flag := flag.Bool("4", false, "使用 IPv4 地址")
+	ipv6Flag := flag.Bool("6", false, "使用 IPv6 地址")
+	countFlag := flag.Int("n", 0, "发送请求次数 (默认: 无限)")
+	timeoutFlag := flag.Int("t", 1, "请求间隔（秒）")
+	versionFlag := flag.Bool("v", false, "显示版本信息")
+	helpFlag := flag.Bool("h", false, "显示帮助信息")
+	connectTimeoutFlag := flag.Int("w", 1000, "连接超时（毫秒）")
 	flag.Parse()
 
 	if *helpFlag {
