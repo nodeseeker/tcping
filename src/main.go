@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version     = "v1.6.2"
+	version     = "v1.6.3"
 	dividerLine = "------------------------------------------------------------"
 	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
@@ -58,43 +58,43 @@ func (s *Statistics) update(elapsed float64, success bool) {
 
 func exit(code int, format string, args ...interface{}) {
 	if format != "" {
-		fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
+		fmt.Fprintf(os.Stderr, "错误: "+format+"\n", args...)
 	}
 	os.Exit(code)
 }
 
 func printHelp() {
-	fmt.Printf(`%s %s - TCP Connection Tester
+	fmt.Printf(`%s %s - TCP 连接测试工具
 
-Description:
-    %s tests TCP connectivity to target host and port.
+描述:
+    %s 测试到目标主机和端口的TCP连接性。
 
-Usage: 
-    tcping [options] <host> [port]      (default port: 80)
+用法: 
+    tcping [选项] <主机> [端口]      (默认端口: 80)
 
-Options:
-    -4              Force IPv4
-    -6              Force IPv6
-    -n <count>      Number of requests to send (default: infinite)
-    -t <seconds>    Interval between requests (default: 1s)
-    -w <ms>         Connection timeout (default: 1000ms)
-    -v              Show version information
-    -h              Show this help message
+选项:
+    -4              强制使用 IPv4
+    -6              强制使用 IPv6
+    -n <次数>       发送请求的次数 (默认: 无限)
+    -t <秒>         请求之间的间隔 (默认: 1秒)
+    -w <毫秒>       连接超时 (默认: 1000毫秒)
+    -v              显示版本信息
+    -h              显示此帮助信息
 
-Examples:
-    tcping google.com				# Basic usage (default port 80)
-    tcping google.com 80         	# Basic usage with explicit port
-    tcping -4 -n 5 8.8.8.8 443   	# IPv4, 5 requests
-    tcping -w 2000 example.com 22  	# 2 second timeout
-    tcping -4 -n 5 134744072 443   	# IPv4 in decimal format, 8.8.8.8
-    tcping 0x08080808 80           	# IPv4 in hex format, 8.8.8.8
+示例:
+    tcping google.com                # 基本用法 (默认端口 80)
+    tcping google.com 80             # 基本用法指定端口
+    tcping -4 -n 5 8.8.8.8 443       # IPv4, 5次请求
+    tcping -w 2000 example.com 22    # 2秒超时
+    tcping -4 -n 5 134744072 443     # 十进制IPv4格式, 8.8.8.8
+    tcping 0x08080808 80             # 十六进制IPv4格式, 8.8.8.8
 
 `, programName, version, programName)
 	exit(0, "")
 }
 
 func printVersion() {
-	fmt.Printf("%s version %s\n", programName, version)
+	fmt.Printf("%s 版本 %s\n", programName, version)
 	fmt.Println(copyright)
 	exit(0, "")
 }
@@ -219,7 +219,7 @@ func isIPv6(address string) bool {
 }
 
 // 修改函数签名，添加context参数
-func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics) {
+func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, host string, ip string) {
 	// 创建可取消的连接上下文
 	dialCtx, dialCancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer dialCancel()
@@ -229,35 +229,41 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	conn, err := d.DialContext(dialCtx, "tcp", address+":"+port)
 	elapsed := float64(time.Since(start).Microseconds()) / 1000.0
 
+	// 检查错误是否是由于上下文取消导致的
+	if err != nil && (ctx.Err() == context.Canceled || dialCtx.Err() == context.Canceled) {
+		// 如果是因为取消操作导致的错误，不更新统计信息
+		fmt.Printf("\n操作被中断, 连接尝试已中止\n")
+		return
+	}
+
 	success := err == nil
 	stats.update(elapsed, success)
 
 	if !success {
-		fmt.Printf("%s to %s:%s - failed: %v\n", programName, address, port, err)
+		fmt.Printf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", address, port, seq, err)
 		return
 	}
 
 	defer conn.Close()
-	fmt.Printf("%s to %s:%s - time=%.3fms\n", programName, address, port, elapsed)
+	fmt.Printf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", host, port, seq, elapsed)
 }
 
 func printTCPingStatistics(stats *Statistics) {
 	stats.Lock()
 	defer stats.Unlock()
 
-	fmt.Printf("\n%s\n%s Statistics:\n%s\n", dividerLine, programName, dividerLine)
+	fmt.Printf("\n\n--- 目标主机 TCP ping 统计 ---\n")
 
 	if stats.sentCount > 0 {
 		lossRate := float64(stats.sentCount-stats.respondedCount) / float64(stats.sentCount) * 100
-		fmt.Printf("    Requests:  %d sent, %d received, %.1f%% loss\n",
-			stats.sentCount, stats.respondedCount, lossRate)
+		fmt.Printf("已发送 = %d, 已接收 = %d, 丢失 = %d (%.1f%% 丢失)\n",
+			stats.sentCount, stats.respondedCount, stats.sentCount-stats.respondedCount, lossRate)
 
 		if stats.respondedCount > 0 {
-			fmt.Printf("    Latency:   min = %.3fms, avg = %.3fms, max = %.3fms\n",
-				stats.minTime, stats.avgTime, stats.maxTime)
+			fmt.Printf("往返时间(RTT): 最小 = %.2fms, 最大 = %.2fms, 平均 = %.2fms\n",
+				stats.minTime, stats.maxTime, stats.avgTime)
 		}
 	}
-	fmt.Println(dividerLine)
 }
 
 func main() {
@@ -279,15 +285,15 @@ func main() {
 	}
 
 	if *ipv4Flag && *ipv6Flag {
-		exit(1, "Cannot use both -4 and -6 flags together")
+		exit(1, "无法同时使用 -4 和 -6 标志")
 	}
 
 	args := flag.Args()
 	if len(args) < 1 {
-		exit(1, "Host argument is required\n\nUsage: tcping [options] <host> [port]\nTry 'tcping -h' for more information")
+		exit(1, "需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
 	}
 
-	address := args[0]
+	host := args[0]
 	port := "80" // 默认端口为 80
 	if len(args) > 1 {
 		port = args[1]
@@ -297,10 +303,24 @@ func main() {
 		exit(1, "%v", err)
 	}
 
-	address = resolveAddress(address, *ipv4Flag || (!*ipv6Flag && isIPv4(address)),
-		*ipv6Flag || isIPv6(address))
+	useIPv4 := *ipv4Flag || (!*ipv6Flag && isIPv4(host))
+	useIPv6 := *ipv6Flag || isIPv6(host)
 
-	fmt.Printf("%sing %s:%s...\n", programName, address, port)
+	// 保存原始主机名用于显示
+	originalHost := host
+
+	// 解析IP地址
+	address := resolveAddress(host, useIPv4, useIPv6)
+
+	// 提取IP地址用于显示
+	ipType := "IPv4"
+	ipAddress := address
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		ipType = "IPv6"
+		ipAddress = address[1 : len(address)-1]
+	}
+
+	fmt.Printf("正在对 %s (%s - %s) 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
 	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -325,8 +345,8 @@ func main() {
 				// 继续执行
 			}
 
-			// 更新函数调用，传递context
-			pingOnce(ctx, address, port, *connectTimeoutFlag, stats)
+			// 更新函数调用，传递context和序列号
+			pingOnce(ctx, address, port, *connectTimeoutFlag, stats, i, originalHost, ipAddress)
 
 			if *countFlag != 0 && i == *countFlag-1 {
 				break pingLoop
@@ -345,10 +365,10 @@ func main() {
 	// 等待中断信号或完成
 	select {
 	case <-interrupt:
-		fmt.Printf("\n%s interrupted.\n", programName)
+		fmt.Printf("\n操作被中断。\n")
 		cancel()
 	case <-ctx.Done():
-		fmt.Printf("\n%s completed.\n", programName)
+		// 静默完成
 	}
 
 	// 等待 goroutine 完成
