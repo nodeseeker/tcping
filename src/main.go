@@ -219,7 +219,7 @@ func isIPv6(address string) bool {
 }
 
 // 修改函数签名，添加context参数
-func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, host string, ip string) {
+func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string) {
 	// 创建可取消的连接上下文
 	dialCtx, dialCancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer dialCancel()
@@ -240,12 +240,30 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	stats.update(elapsed, success)
 
 	if !success {
-		fmt.Printf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", ip, port, seq, err)
+		// 修改错误消息格式，去除重复的IP:端口信息
+		errMsg := fmt.Sprintf("%v", err)
+
+		// 创建更精确的匹配模式，确保删除错误中的IP:端口
+		targetAddr := address + ":" + port
+		if strings.Contains(errMsg, targetAddr) {
+			// 替换所有包含IP:端口的部分
+			errParts := strings.Split(errMsg, targetAddr)
+			if len(errParts) > 1 {
+				// 重新组装错误信息，跳过IP:端口部分
+				if strings.HasPrefix(errMsg, "dial ") {
+					prefix := strings.Split(errMsg, targetAddr)[0]
+					suffix := strings.Join(strings.Split(errMsg, targetAddr)[1:], "")
+					errMsg = prefix + suffix
+				}
+			}
+		}
+
+		fmt.Printf("TCP连接失败 %s:%s: seq=%d 错误=%s\n", ip, port, seq, errMsg)
 		return
 	}
 
 	defer conn.Close()
-	fmt.Printf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", host, port, seq, elapsed)
+	fmt.Printf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", ip, port, seq, elapsed)
 }
 
 func printTCPingStatistics(stats *Statistics) {
@@ -346,7 +364,9 @@ func main() {
 			}
 
 			// 更新函数调用，传递context和序列号
-			pingOnce(ctx, address, port, *connectTimeoutFlag, stats, i, originalHost, ipAddress)
+			{
+				pingOnce(ctx, address, port, *connectTimeoutFlag, stats, i, ipAddress)
+			}
 
 			if *countFlag != 0 && i == *countFlag-1 {
 				break pingLoop
