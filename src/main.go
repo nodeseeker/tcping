@@ -76,7 +76,7 @@ type Options struct {
 	UseIPv4     bool
 	UseIPv6     bool
 	Count       int
-	Interval    int
+	Interval    int // 请求间隔（毫秒）
 	Timeout     int
 	ColorOutput bool
 	VerboseMode bool
@@ -106,7 +106,7 @@ func printHelp() {
     -6, --ipv6              强制使用 IPv6
     -n, --count <次数>      发送请求的次数 (默认: 无限)
     -p, --port <端口>       指定要连接的端口 (默认: 80)
-    -t, --interval <秒>     请求之间的间隔 (默认: 1秒)
+    -t, --interval <毫秒>    连接超时 (默认: 1000毫秒)
     -w, --timeout <毫秒>    连接超时 (默认: 1000毫秒)
     -c, --color             启用彩色输出
     -v, --verbose           启用详细模式，显示更多连接信息
@@ -372,7 +372,7 @@ func setupFlags(opts *Options) {
 	ipv4 := flag.Bool("4", false, "使用 IPv4 地址")
 	ipv6 := flag.Bool("6", false, "使用 IPv6 地址")
 	count := flag.Int("n", 0, "发送请求次数 (默认: 无限)")
-	interval := flag.Int("t", 1, "请求间隔（秒）")
+	interval := flag.Int("t", 1000, "请求间隔（毫秒）")
 	timeout := flag.Int("w", 1000, "连接超时（毫秒）")
 	port := flag.Int("p", 0, "指定要连接的端口 (默认: 80)")
 	color := flag.Bool("c", false, "启用彩色输出")
@@ -384,7 +384,7 @@ func setupFlags(opts *Options) {
 	flag.BoolVar(ipv4, "ipv4", false, "使用 IPv4 地址")
 	flag.BoolVar(ipv6, "ipv6", false, "使用 IPv6 地址")
 	flag.IntVar(count, "count", 0, "发送请求次数 (默认: 无限)")
-	flag.IntVar(interval, "interval", 1, "请求间隔（秒）")
+	flag.IntVar(interval, "interval", 1000, "请求间隔（毫秒）")
 	flag.IntVar(timeout, "timeout", 1000, "连接超时（毫秒）")
 	flag.IntVar(port, "port", 0, "指定要连接的端口 (默认: 80)")
 	flag.BoolVar(color, "color", false, "启用彩色输出")
@@ -538,7 +538,7 @@ func main() {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(time.Duration(opts.Interval) * time.Second):
+			case <-time.After(time.Duration(opts.Interval) * time.Millisecond):
 				// 继续下一次ping
 			}
 		}
