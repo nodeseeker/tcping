@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	version     = "v1.7.0"
+	version     = "v1.7.1"
 	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
 )
