@@ -1,7 +1,5 @@
 #!/bin/bash
 
-
-
 set -euo pipefail  # 严格模式：遇到错误立即退出，未定义变量报错，管道错误传播
 
 # 颜色定义
@@ -118,86 +116,218 @@ detect_architecture() {
     echo "$mapped_arch"
 }
 
-# 检查网络连接
+# 增强的网络连接检查
 check_network() {
     print_info "检查网络连接..."
-    if ! ping -c 1 -W 5 github.com &>/dev/null; then
-        error_exit "无法连接到GitHub，请检查网络连接"
+    
+    # 检查基本网络连接
+    if ! ping -c 1 -W 5 8.8.8.8 &>/dev/null; then
+        if ! ping -c 1 -W 5 114.114.114.114 &>/dev/null; then
+            error_exit "无法连接到互联网，请检查网络连接"
+        fi
     fi
+    
+    # 检查GitHub连接
+    if ! ping -c 1 -W 10 github.com &>/dev/null; then
+        print_warning "无法直接连接GitHub，但基本网络正常"
+        # 尝试通过代理检查
+        if ! curl -s --connect-timeout 10 --max-time 30 "https://api.github.com" >/dev/null; then
+            error_exit "无法连接到GitHub API，请检查网络连接或防火墙设置"
+        fi
+    fi
+    
     print_success "网络连接正常"
 }
 
 # 检查依赖工具
 check_dependencies() {
-    local deps=("curl" "unzip")
+    local deps=("curl" "unzip" "wget")
     local missing_deps=()
+    local available_tools=()
     
     print_info "检查依赖工具..."
     
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &>/dev/null; then
-            missing_deps+=("$dep")
+    # 检查curl和wget，至少需要一个
+    local has_downloader=false
+    for tool in "curl" "wget"; do
+        if command -v "$tool" &>/dev/null; then
+            available_tools+=("$tool")
+            has_downloader=true
+            if [[ "$tool" == "curl" ]]; then
+                export DOWNLOADER="curl"
+            fi
         fi
     done
+    
+    if [[ "$has_downloader" == "false" ]]; then
+        missing_deps+=("curl或wget")
+    else
+        # 如果没有curl但有wget，使用wget
+        if [[ -z "${DOWNLOADER:-}" ]] && command -v "wget" &>/dev/null; then
+            export DOWNLOADER="wget"
+        fi
+    fi
+    
+    # 检查unzip
+    if ! command -v "unzip" &>/dev/null; then
+        missing_deps+=("unzip")
+    fi
     
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         print_error "缺少依赖工具: ${missing_deps[*]}"
         print_info "请先安装缺少的工具："
-        print_info "  Ubuntu/Debian: apt-get install ${missing_deps[*]}"
-        print_info "  CentOS/RHEL:   yum install ${missing_deps[*]}"
-        print_info "  Fedora:        dnf install ${missing_deps[*]}"
+        print_info "  Ubuntu/Debian: apt-get install curl wget unzip"
+        print_info "  CentOS/RHEL:   yum install curl wget unzip"
+        print_info "  Fedora:        dnf install curl wget unzip"
+        print_info "  Alpine:        apk add curl wget unzip"
         error_exit "请安装依赖工具后重试"
     fi
     
-    print_success "依赖工具检查完成"
+    print_success "依赖工具检查完成，可用工具: ${available_tools[*]}"
 }
 
-# 获取最新版本信息
+# 增强的版本获取函数
 get_latest_version() {
     print_info "获取最新版本信息..."
     
-    local api_url="https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-    local version_info
+    local api_urls=(
+        "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        "https://github.com/$GITHUB_REPO/releases/latest"
+    )
     
-    if ! version_info=$(curl -s --connect-timeout 10 "$api_url"); then
-        error_exit "无法获取版本信息，请检查网络连接"
+    local version_info=""
+    local latest_version=""
+    
+    # 尝试多个API端点
+    for api_url in "${api_urls[@]}"; do
+        print_info "尝试从 $api_url 获取版本信息..."
+        
+        if [[ "${DOWNLOADER:-curl}" == "curl" ]]; then
+            if version_info=$(curl -s --connect-timeout 15 --max-time 30 \
+                --retry 2 --retry-delay 1 \
+                -H "User-Agent: tcping-installer/1.0" \
+                "$api_url" 2>/dev/null); then
+                break
+            fi
+        else
+            if version_info=$(wget -q --timeout=30 --tries=2 \
+                --user-agent="tcping-installer/1.0" \
+                -O- "$api_url" 2>/dev/null); then
+                break
+            fi
+        fi
+        
+        print_warning "从 $api_url 获取版本信息失败，尝试下一个端点..."
+    done
+    
+    # 检查是否成功获取到版本信息
+    if [[ -z "$version_info" ]]; then
+        print_error "无法从任何API端点获取版本信息"
+        print_error "请检查网络连接、防火墙设置或GitHub访问权限"
+        print_info "可能的解决方案："
+        print_info "1. 检查网络连接是否正常"
+        print_info "2. 确认可以访问 github.com"
+        print_info "3. 检查防火墙或代理设置"
+        print_info "4. 稍后重试"
+        return 1  # 返回错误状态而不是直接退出
     fi
     
-    local latest_version=$(echo "$version_info" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
+    # 解析版本号
+    if echo "$version_info" | grep -q '"tag_name"'; then
+        # JSON格式响应
+        latest_version=$(echo "$version_info" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
+    else
+        # HTML格式响应，尝试解析
+        latest_version=$(echo "$version_info" | grep -oE 'releases/tag/[^"]*' | head -n1 | sed 's/releases\/tag\///')
+    fi
     
-    if [[ -z "$latest_version" ]]; then
-        error_exit "无法解析版本信息"
+    # 验证版本号格式
+    if [[ -z "$latest_version" ]] || [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+        print_error "无法解析版本信息或版本格式无效: '$latest_version'"
+        print_info "获取到的原始数据: ${version_info:0:200}..."
+        return 1
     fi
     
     print_success "最新版本: $latest_version"
     echo "$latest_version"
+    return 0
 }
 
 # 构建下载URL
 build_download_url() {
     local version="$1"
     local arch="$2"
-    echo "https://gh-proxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+    
+    # 提供多个镜像源
+    local mirrors=(
+        "https://gh-proxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+        "https://ghproxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+        "https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+    )
+    
+    # 返回所有可能的URL
+    printf '%s\n' "${mirrors[@]}"
 }
 
-# 下载文件
+# 增强的下载函数
 download_file() {
-    local url="$1"
-    local output="$2"
+    local urls=("$@")
+    local output="${urls[-1]}"  # 最后一个参数是输出文件
+    unset 'urls[-1]'  # 移除最后一个元素
     
-    print_info "下载文件: $url"
+    print_info "开始下载文件到: $output"
     
-    if ! curl -L --connect-timeout 30 --max-time 300 -o "$output" "$url"; then
-        error_exit "下载失败: $url"
+    local success=false
+    local attempt=0
+    
+    for url in "${urls[@]}"; do
+        ((attempt++))
+        print_info "尝试 $attempt: $url"
+        
+        local download_success=false
+        
+        if [[ "${DOWNLOADER:-curl}" == "curl" ]]; then
+            if curl -L --connect-timeout 30 --max-time 600 \
+                --retry 3 --retry-delay 2 \
+                -H "User-Agent: tcping-installer/1.0" \
+                --progress-bar \
+                -o "$output" "$url"; then
+                download_success=true
+            fi
+        else
+            if wget --timeout=600 --tries=3 --wait=2 \
+                --user-agent="tcping-installer/1.0" \
+                --progress=bar:force \
+                -O "$output" "$url"; then
+                download_success=true
+            fi
+        fi
+        
+        if [[ "$download_success" == "true" ]]; then
+            # 检查文件大小和完整性
+            local file_size=$(stat -c%s "$output" 2>/dev/null || echo "0")
+            if [[ $file_size -gt 1000 ]]; then
+                # 尝试检查ZIP文件完整性
+                if unzip -t "$output" &>/dev/null; then
+                    print_success "下载完成: $output (大小: ${file_size} 字节)"
+                    success=true
+                    break
+                else
+                    print_warning "下载的文件可能损坏，尝试下一个源..."
+                    rm -f "$output"
+                fi
+            else
+                print_warning "下载的文件太小，可能下载失败，尝试下一个源..."
+                rm -f "$output"
+            fi
+        else
+            print_warning "从 $url 下载失败，尝试下一个源..."
+        fi
+    done
+    
+    if [[ "$success" != "true" ]]; then
+        error_exit "所有下载源都失败了"
     fi
-    
-    # 检查文件大小
-    local file_size=$(stat -c%s "$output" 2>/dev/null || echo "0")
-    if [[ $file_size -lt 1000 ]]; then
-        error_exit "下载的文件太小，可能下载失败"
-    fi
-    
-    print_success "下载完成: $output (大小: ${file_size} 字节)"
 }
 
 # 解压文件
@@ -206,6 +336,11 @@ extract_file() {
     local extract_dir="$2"
     
     print_info "解压文件: $zip_file"
+    
+    # 检查ZIP文件完整性
+    if ! unzip -t "$zip_file" &>/dev/null; then
+        error_exit "ZIP文件损坏或格式无效: $zip_file"
+    fi
     
     if ! unzip -q "$zip_file" -d "$extract_dir"; then
         error_exit "解压失败: $zip_file"
@@ -242,6 +377,16 @@ install_file() {
         error_exit "源文件不存在: $source_file"
     fi
     
+    # 检查源文件是否为有效的可执行文件
+    if ! file "$source_file" | grep -q "executable"; then
+        print_warning "源文件可能不是有效的可执行文件"
+    fi
+    
+    # 确保目标目录存在
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        error_exit "安装目录不存在: $INSTALL_DIR"
+    fi
+    
     # 复制文件
     if ! cp "$source_file" "$target_file"; then
         error_exit "复制文件失败"
@@ -275,11 +420,18 @@ verify_installation() {
     fi
     
     # 测试运行
-    if ! "$target_file" --version &>/dev/null; then
-        print_warning "无法获取版本信息，但文件已安装"
+    local test_output
+    if test_output=$("$target_file" --version 2>&1); then
+        print_success "安装验证成功，版本: $test_output"
+    elif test_output=$("$target_file" -h 2>&1 | head -n1); then
+        print_success "安装验证成功: $test_output"
     else
-        local installed_version=$("$target_file" --version 2>/dev/null | head -n1 || echo "未知版本")
-        print_success "安装验证成功，版本: $installed_version"
+        print_warning "无法获取版本信息，但文件已安装且可执行"
+    fi
+    
+    # 检查PATH
+    if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+        print_warning "$INSTALL_DIR 不在PATH中，可能需要重新登录或手动添加到PATH"
     fi
 }
 
@@ -307,6 +459,17 @@ uninstall_tcping() {
     # 删除文件
     if rm -f "$target_file"; then
         print_success "tcping已成功卸载"
+        
+        # 清理备份文件（可选）
+        local backup_files=("${target_file}.backup."*)
+        if [[ -f "${backup_files[0]}" ]]; then
+            echo -n "是否删除备份文件？[y/N]: " >&2
+            read -r
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                rm -f "${target_file}".backup.*
+                print_info "备份文件已删除"
+            fi
+        fi
     else
         error_exit "卸载失败"
     fi
@@ -322,29 +485,51 @@ install_tcping() {
     check_network
     
     # 检测架构
-    local arch=$(detect_architecture)
+    local arch
+    if ! arch=$(detect_architecture); then
+        error_exit "架构检测失败"
+    fi
     
-    # 获取最新版本
-    local version=$(get_latest_version)
+    # 获取最新版本（关键修复：检查返回状态）
+    local version
+    if ! version=$(get_latest_version); then
+        error_exit "获取版本信息失败，无法继续安装"
+    fi
     
-    # 构建下载URL
-    local download_url=$(build_download_url "$version" "$arch")
+    # 验证版本信息不为空
+    if [[ -z "$version" ]]; then
+        error_exit "版本信息为空，无法继续安装"
+    fi
+    
+    # 构建下载URL数组
+    local download_urls
+    readarray -t download_urls < <(build_download_url "$version" "$arch")
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
     
     # 下载文件
     local zip_file="$TEMP_DIR/tcping-linux-$arch.zip"
-    download_file "$download_url" "$zip_file"
+    download_file "${download_urls[@]}" "$zip_file"
     
     # 解压文件
     extract_file "$zip_file" "$TEMP_DIR"
     
     # 查找解压出的tcping文件
-    local tcping_file=$(find "$TEMP_DIR" -name "tcping" -type f | head -n1)
+    local tcping_file
+    tcping_file=$(find "$TEMP_DIR" -name "tcping" -type f | head -n1)
     if [[ -z "$tcping_file" ]]; then
-        error_exit "解压后未找到tcping文件"
+        # 尝试查找其他可能的文件名
+        tcping_file=$(find "$TEMP_DIR" -name "*tcping*" -type f | head -n1)
+        if [[ -z "$tcping_file" ]]; then
+            print_error "解压后未找到tcping文件"
+            print_info "临时目录内容:"
+            ls -la "$TEMP_DIR" >&2 || true
+            error_exit "找不到可执行文件"
+        fi
     fi
+    
+    print_info "找到tcping文件: $tcping_file"
     
     # 备份现有版本
     backup_existing
@@ -407,7 +592,10 @@ main() {
     fi
     
     # 创建日志文件
-    touch "$LOG_FILE"
+    touch "$LOG_FILE" 2>/dev/null || {
+        print_warning "无法创建日志文件: $LOG_FILE"
+        export LOG_FILE="/dev/null"
+    }
     
     print_info "tcping自动安装脚本启动"
     print_info "日志文件: $LOG_FILE"
