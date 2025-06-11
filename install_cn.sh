@@ -127,15 +127,6 @@ check_network() {
         fi
     fi
     
-    # 检查GitHub连接
-    if ! ping -c 1 -W 10 github.com &>/dev/null; then
-        print_warning "无法直接连接GitHub，但基本网络正常"
-        # 尝试通过代理检查
-        if ! curl -s --connect-timeout 10 --max-time 30 "https://api.github.com" >/dev/null; then
-            error_exit "无法连接到GitHub API，请检查网络连接或防火墙设置"
-        fi
-    fi
-    
     print_success "网络连接正常"
 }
 
@@ -186,17 +177,19 @@ check_dependencies() {
     print_success "依赖工具检查完成，可用工具: ${available_tools[*]}"
 }
 
-# 增强的版本获取函数
+# 修复后的版本获取函数 - 关键修复点
 get_latest_version() {
     print_info "获取最新版本信息..."
     
     local api_urls=(
         "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        "https://github.com/$GITHUB_REPO/releases/latest"
+        "https://gh-proxy.com/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        "https://ghproxy.com/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     )
     
     local version_info=""
     local latest_version=""
+    local success=false
     
     # 尝试多个API端点
     for api_url in "${api_urls[@]}"; do
@@ -206,14 +199,30 @@ get_latest_version() {
             if version_info=$(curl -s --connect-timeout 15 --max-time 30 \
                 --retry 2 --retry-delay 1 \
                 -H "User-Agent: tcping-installer/1.0" \
+                -H "Accept: application/vnd.github.v3+json" \
                 "$api_url" 2>/dev/null); then
-                break
+                
+                # 检查是否返回了有效的JSON
+                if echo "$version_info" | grep -q '"tag_name"'; then
+                    success=true
+                    break
+                else
+                    print_warning "返回数据不是有效的JSON格式"
+                fi
             fi
         else
             if version_info=$(wget -q --timeout=30 --tries=2 \
                 --user-agent="tcping-installer/1.0" \
+                --header="Accept: application/vnd.github.v3+json" \
                 -O- "$api_url" 2>/dev/null); then
-                break
+                
+                # 检查是否返回了有效的JSON
+                if echo "$version_info" | grep -q '"tag_name"'; then
+                    success=true
+                    break
+                else
+                    print_warning "返回数据不是有效的JSON格式"
+                fi
             fi
         fi
         
@@ -221,31 +230,38 @@ get_latest_version() {
     done
     
     # 检查是否成功获取到版本信息
-    if [[ -z "$version_info" ]]; then
-        print_error "无法从任何API端点获取版本信息"
+    if [[ "$success" != "true" ]] || [[ -z "$version_info" ]]; then
+        print_error "无法获取版本信息，请检查网络连接"
         print_error "请检查网络连接、防火墙设置或GitHub访问权限"
         print_info "可能的解决方案："
         print_info "1. 检查网络连接是否正常"
         print_info "2. 确认可以访问 github.com"
         print_info "3. 检查防火墙或代理设置"
         print_info "4. 稍后重试"
-        return 1  # 返回错误状态而不是直接退出
+        
+        # 显示获取到的原始数据用于调试
+        if [[ -n "$version_info" ]]; then
+            print_info "获取到的原始数据前200字符: ${version_info:0:200}..."
+        fi
+        
+        # 关键修复：直接调用error_exit而不是return 1
+        error_exit "版本信息获取失败，停止安装流程"
     fi
     
     # 解析版本号
-    if echo "$version_info" | grep -q '"tag_name"'; then
-        # JSON格式响应
-        latest_version=$(echo "$version_info" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
-    else
-        # HTML格式响应，尝试解析
-        latest_version=$(echo "$version_info" | grep -oE 'releases/tag/[^"]*' | head -n1 | sed 's/releases\/tag\///')
-    fi
+    latest_version=$(echo "$version_info" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/' | head -1)
     
     # 验证版本号格式
-    if [[ -z "$latest_version" ]] || [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-        print_error "无法解析版本信息或版本格式无效: '$latest_version'"
+    if [[ -z "$latest_version" ]]; then
+        print_error "无法解析版本信息"
         print_info "获取到的原始数据: ${version_info:0:200}..."
-        return 1
+        error_exit "版本号解析失败，停止安装流程"
+    fi
+    
+    # 验证版本号格式（支持v前缀或纯数字格式）  
+    if [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)*$ ]]; then
+        print_error "版本号格式无效: '$latest_version'"
+        error_exit "版本号格式验证失败，停止安装流程"
     fi
     
     print_success "最新版本: $latest_version"
@@ -285,20 +301,32 @@ download_file() {
         print_info "尝试 $attempt: $url"
         
         local download_success=false
+        local http_code=""
         
         if [[ "${DOWNLOADER:-curl}" == "curl" ]]; then
-            if curl -L --connect-timeout 30 --max-time 600 \
-                --retry 3 --retry-delay 2 \
+            # 先检查HTTP状态码
+            http_code=$(curl -s -I -L --connect-timeout 30 \
                 -H "User-Agent: tcping-installer/1.0" \
-                --progress-bar \
-                -o "$output" "$url"; then
-                download_success=true
+                -w "%{http_code}" -o /dev/null "$url" 2>/dev/null || echo "000")
+            
+            if [[ "$http_code" == "200" ]]; then
+                if curl -L --connect-timeout 30 --max-time 600 \
+                    --retry 3 --retry-delay 2 \
+                    -H "User-Agent: tcping-installer/1.0" \
+                    --fail \
+                    --progress-bar \
+                    -o "$output" "$url"; then
+                    download_success=true
+                fi
+            else
+                print_warning "HTTP状态码: $http_code"
             fi
         else
             if wget --timeout=600 --tries=3 --wait=2 \
                 --user-agent="tcping-installer/1.0" \
                 --progress=bar:force \
-                -O "$output" "$url"; then
+                --server-response \
+                -O "$output" "$url" 2>&1 | grep -q "200 OK"; then
                 download_success=true
             fi
         fi
@@ -307,17 +335,24 @@ download_file() {
             # 检查文件大小和完整性
             local file_size=$(stat -c%s "$output" 2>/dev/null || echo "0")
             if [[ $file_size -gt 1000 ]]; then
-                # 尝试检查ZIP文件完整性
-                if unzip -t "$output" &>/dev/null; then
-                    print_success "下载完成: $output (大小: ${file_size} 字节)"
-                    success=true
-                    break
+                # 检查文件头，确保是ZIP文件
+                if file "$output" | grep -q "Zip archive"; then
+                    # 尝试检查ZIP文件完整性
+                    if unzip -t "$output" &>/dev/null; then
+                        print_success "下载完成: $output (大小: ${file_size} 字节)"
+                        success=true
+                        break
+                    else
+                        print_warning "ZIP文件损坏，尝试下一个源..."
+                        rm -f "$output"
+                    fi
                 else
-                    print_warning "下载的文件可能损坏，尝试下一个源..."
+                    print_warning "下载的文件不是ZIP格式（可能是错误页面），尝试下一个源..."
+                    print_info "文件类型: $(file "$output")"
                     rm -f "$output"
                 fi
             else
-                print_warning "下载的文件太小，可能下载失败，尝试下一个源..."
+                print_warning "下载的文件太小（${file_size}字节），可能下载失败，尝试下一个源..."
                 rm -f "$output"
             fi
         else
@@ -475,7 +510,7 @@ uninstall_tcping() {
     fi
 }
 
-# 主安装函数
+# 修复后的主安装函数 - 关键修复点
 install_tcping() {
     print_info "开始安装tcping..."
     
@@ -486,27 +521,35 @@ install_tcping() {
     
     # 检测架构
     local arch
-    if ! arch=$(detect_architecture); then
-        error_exit "架构检测失败"
-    fi
+    arch=$(detect_architecture)  # 直接调用，错误会通过error_exit传播
     
-    # 获取最新版本（关键修复：检查返回状态）
+    # 获取最新版本 - 关键修复：直接调用，不使用命令替换
     local version
-    if ! version=$(get_latest_version); then
-        error_exit "获取版本信息失败，无法继续安装"
-    fi
+    # 使用临时文件来传递版本信息
+    local version_file="$TEMP_DIR/version_info"
+    mkdir -p "$TEMP_DIR"
     
-    # 验证版本信息不为空
+    # 调用版本获取函数，如果失败会直接error_exit
+    get_latest_version > "$version_file"
+    version=$(cat "$version_file")
+    rm -f "$version_file"
+    
+    # 验证版本信息不为空（双重保险）
     if [[ -z "$version" ]]; then
         error_exit "版本信息为空，无法继续安装"
     fi
+    
+    print_info "准备下载版本: $version"
     
     # 构建下载URL数组
     local download_urls
     readarray -t download_urls < <(build_download_url "$version" "$arch")
     
-    # 创建临时目录
-    mkdir -p "$TEMP_DIR"
+    # 显示将要尝试的下载URL
+    print_info "将尝试以下下载源:"
+    for url in "${download_urls[@]}"; do
+        print_info "  - $url"
+    done
     
     # 下载文件
     local zip_file="$TEMP_DIR/tcping-linux-$arch.zip"
