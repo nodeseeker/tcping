@@ -164,6 +164,11 @@ check_dependencies() {
         missing_deps+=("unzip")
     fi
     
+    # 检查JSON解析工具
+    if ! command -v "jq" &>/dev/null && ! command -v "python3" &>/dev/null && ! command -v "python" &>/dev/null; then
+        print_info "未发现JSON解析工具，将使用基础文本处理方式"
+    fi
+    
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         print_error "缺少依赖工具: ${missing_deps[*]}"
         print_info "请先安装缺少的工具："
@@ -177,13 +182,70 @@ check_dependencies() {
     print_success "依赖工具检查完成，可用工具: ${available_tools[*]}"
 }
 
-# 完全重写的版本获取函数 - 关键修复
+# 解析JSON获取版本号的函数
+parse_version_from_json() {
+    local json_data="$1"
+    local version=""
+    
+    # 方法1: 使用jq（如果可用）
+    if command -v jq &>/dev/null; then
+        version=$(echo "$json_data" | jq -r '.tag_name' 2>/dev/null || echo "")
+        if [[ -n "$version" && "$version" != "null" ]]; then
+            echo "$version"
+            return 0
+        fi
+    fi
+    
+    # 方法2: 使用Python（如果可用）
+    if command -v python3 &>/dev/null; then
+        version=$(echo "$json_data" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('tag_name', ''))
+except:
+    pass
+" 2>/dev/null || echo "")
+        if [[ -n "$version" ]]; then
+            echo "$version"
+            return 0
+        fi
+    elif command -v python &>/dev/null; then
+        version=$(echo "$json_data" | python -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('tag_name', ''))
+except:
+    pass
+" 2>/dev/null || echo "")
+        if [[ -n "$version" ]]; then
+            echo "$version"
+            return 0
+        fi
+    fi
+    
+    # 方法3: 使用sed/awk（基础文本处理）
+    # 更精确的正则表达式匹配
+    version=$(echo "$json_data" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    
+    if [[ -n "$version" ]]; then
+        echo "$version"
+        return 0
+    fi
+    
+    # 如果以上方法都失败了
+    return 1
+}
+
+# 修复后的版本获取函数
 get_latest_version() {
     print_info "获取最新版本信息..."
     
     local api_urls=(
         "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
         "https://proxy.api.030101.xyz/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        
     )
     
     local version_info=""
@@ -209,15 +271,24 @@ get_latest_version() {
         
         # 检查是否返回了有效的JSON
         if [[ -n "$version_info" ]] && echo "$version_info" | grep -q '"tag_name"'; then
-            success=true
-            break
+            print_success "成功获取到版本数据"
+            
+            # 使用专门的函数解析版本号
+            if latest_version=$(parse_version_from_json "$version_info"); then
+                if [[ -n "$latest_version" ]]; then
+                    success=true
+                    break
+                fi
+            fi
+            
+            print_warning "获取到数据但解析版本号失败，尝试下一个端点..."
         else
             print_warning "从 $api_url 获取版本信息失败，尝试下一个端点..."
         fi
     done
     
     # 检查是否成功获取到版本信息
-    if [[ "$success" != "true" ]] || [[ -z "$version_info" ]]; then
+    if [[ "$success" != "true" ]] || [[ -z "$latest_version" ]]; then
         print_error "无法获取版本信息，请检查网络连接"
         print_error "请检查网络连接、防火墙设置或GitHub访问权限"
         print_info "可能的解决方案："
@@ -228,25 +299,15 @@ get_latest_version() {
         
         # 显示获取到的原始数据用于调试
         if [[ -n "$version_info" ]]; then
-            print_info "获取到的原始数据前200字符: ${version_info:0:200}..."
+            print_info "获取到的原始数据前200字符:"
+            echo "${version_info:0:200}..." >&2
         fi
         
-        # 返回错误状态而不是直接退出，让调用者处理
-        return 1
-    fi
-    
-    # 解析版本号
-    latest_version=$(echo "$version_info" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/' | head -1)
-    
-    # 验证版本号格式
-    if [[ -z "$latest_version" ]]; then
-        print_error "无法解析版本信息"
-        print_info "获取到的原始数据: ${version_info:0:200}..."
         return 1
     fi
     
     # 验证版本号格式（支持v前缀或纯数字格式）  
-    if [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)*$ ]]; then
+    if [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9\.]+)*$ ]]; then
         print_error "版本号格式无效: '$latest_version'"
         return 1
     fi
@@ -263,10 +324,9 @@ build_download_url() {
     
     # 提供多个镜像源
     local mirrors=(
-		"https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
         "https://gh-proxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
-        "https://ghfast.top//https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
-        
+        "https://ghfast.top/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+        "https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
     )
     
     # 返回所有可能的URL
@@ -498,7 +558,7 @@ uninstall_tcping() {
     fi
 }
 
-# 完全重写的主安装函数 - 彻底修复版本获取问题
+# 主安装函数
 install_tcping() {
     print_info "开始安装tcping..."
     
@@ -514,7 +574,7 @@ install_tcping() {
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
     
-    # 获取最新版本 - 关键修复：正确处理错误状态
+    # 获取最新版本
     print_info "正在获取最新版本信息..."
     local version
     if ! version=$(get_latest_version); then

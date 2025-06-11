@@ -51,7 +51,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install
 ```
 - 一键脚本安装(国内服务器)
 ```bash
-bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
+bash <(curl -Ls https://ghfast.top/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
 ```
 - 选项:
     -h, --help          显示此帮助信息
