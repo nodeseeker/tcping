@@ -45,10 +45,26 @@ TCPing 提供了详细的错误处理机制，确保用户能够快速定位问�
 
 ## 使用教程
 ### 安装方法
-- 一键脚本安装
+- 一键脚本安装(境外服务器)
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh) --force
 ```
+- 一键脚本安装(国内服务器)
+```bash
+bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
+```
+- 选项:
+    -h, --help          显示此帮助信息
+    -u, --uninstall     卸载tcping
+    -f, --force         强制安装（跳过确认）
+    -v, --verbose       详细输出
+    --version           显示版本信息
+
+- 示例:
+    $SCRIPT_NAME                    # 交互式安装
+    $SCRIPT_NAME --force            # 强制安装
+    $SCRIPT_NAME --uninstall        # 卸载tcping
+
 - 手动安装
 
 浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可。
