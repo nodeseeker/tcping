@@ -183,8 +183,7 @@ get_latest_version() {
     
     local api_urls=(
         "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        "https://gh-proxy.com/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        "https://ghproxy.com/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+        "https://proxy.api.030101.xyz/https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     )
     
     local version_info=""
@@ -264,9 +263,10 @@ build_download_url() {
     
     # 提供多个镜像源
     local mirrors=(
+		"https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
         "https://gh-proxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
-        "https://ghproxy.com/https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
-        "https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+        "https://ghfast.top//https://github.com/$GITHUB_REPO/releases/download/$version/tcping-linux-$arch.zip"
+        
     )
     
     # 返回所有可能的URL
