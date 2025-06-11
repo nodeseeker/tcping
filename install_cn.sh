@@ -177,7 +177,7 @@ check_dependencies() {
     print_success "依赖工具检查完成，可用工具: ${available_tools[*]}"
 }
 
-# 修复后的版本获取函数 - 关键修复点
+# 完全重写的版本获取函数 - 关键修复
 get_latest_version() {
     print_info "获取最新版本信息..."
     
@@ -196,37 +196,25 @@ get_latest_version() {
         print_info "尝试从 $api_url 获取版本信息..."
         
         if [[ "${DOWNLOADER:-curl}" == "curl" ]]; then
-            if version_info=$(curl -s --connect-timeout 15 --max-time 30 \
+            version_info=$(curl -s --connect-timeout 15 --max-time 30 \
                 --retry 2 --retry-delay 1 \
                 -H "User-Agent: tcping-installer/1.0" \
                 -H "Accept: application/vnd.github.v3+json" \
-                "$api_url" 2>/dev/null); then
-                
-                # 检查是否返回了有效的JSON
-                if echo "$version_info" | grep -q '"tag_name"'; then
-                    success=true
-                    break
-                else
-                    print_warning "返回数据不是有效的JSON格式"
-                fi
-            fi
+                "$api_url" 2>/dev/null || echo "")
         else
-            if version_info=$(wget -q --timeout=30 --tries=2 \
+            version_info=$(wget -q --timeout=30 --tries=2 \
                 --user-agent="tcping-installer/1.0" \
                 --header="Accept: application/vnd.github.v3+json" \
-                -O- "$api_url" 2>/dev/null); then
-                
-                # 检查是否返回了有效的JSON
-                if echo "$version_info" | grep -q '"tag_name"'; then
-                    success=true
-                    break
-                else
-                    print_warning "返回数据不是有效的JSON格式"
-                fi
-            fi
+                -O- "$api_url" 2>/dev/null || echo "")
         fi
         
-        print_warning "从 $api_url 获取版本信息失败，尝试下一个端点..."
+        # 检查是否返回了有效的JSON
+        if [[ -n "$version_info" ]] && echo "$version_info" | grep -q '"tag_name"'; then
+            success=true
+            break
+        else
+            print_warning "从 $api_url 获取版本信息失败，尝试下一个端点..."
+        fi
     done
     
     # 检查是否成功获取到版本信息
@@ -244,8 +232,8 @@ get_latest_version() {
             print_info "获取到的原始数据前200字符: ${version_info:0:200}..."
         fi
         
-        # 关键修复：直接调用error_exit而不是return 1
-        error_exit "版本信息获取失败，停止安装流程"
+        # 返回错误状态而不是直接退出，让调用者处理
+        return 1
     fi
     
     # 解析版本号
@@ -255,13 +243,13 @@ get_latest_version() {
     if [[ -z "$latest_version" ]]; then
         print_error "无法解析版本信息"
         print_info "获取到的原始数据: ${version_info:0:200}..."
-        error_exit "版本号解析失败，停止安装流程"
+        return 1
     fi
     
     # 验证版本号格式（支持v前缀或纯数字格式）  
     if [[ ! "$latest_version" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)*$ ]]; then
         print_error "版本号格式无效: '$latest_version'"
-        error_exit "版本号格式验证失败，停止安装流程"
+        return 1
     fi
     
     print_success "最新版本: $latest_version"
@@ -510,7 +498,7 @@ uninstall_tcping() {
     fi
 }
 
-# 修复后的主安装函数 - 关键修复点
+# 完全重写的主安装函数 - 彻底修复版本获取问题
 install_tcping() {
     print_info "开始安装tcping..."
     
@@ -521,18 +509,18 @@ install_tcping() {
     
     # 检测架构
     local arch
-    arch=$(detect_architecture)  # 直接调用，错误会通过error_exit传播
+    arch=$(detect_architecture)
     
-    # 获取最新版本 - 关键修复：直接调用，不使用命令替换
-    local version
-    # 使用临时文件来传递版本信息
-    local version_file="$TEMP_DIR/version_info"
+    # 创建临时目录
     mkdir -p "$TEMP_DIR"
     
-    # 调用版本获取函数，如果失败会直接error_exit
-    get_latest_version > "$version_file"
-    version=$(cat "$version_file")
-    rm -f "$version_file"
+    # 获取最新版本 - 关键修复：正确处理错误状态
+    print_info "正在获取最新版本信息..."
+    local version
+    if ! version=$(get_latest_version); then
+        # 版本获取失败，立即停止
+        error_exit "版本信息获取失败，停止安装流程"
+    fi
     
     # 验证版本信息不为空（双重保险）
     if [[ -z "$version" ]]; then
