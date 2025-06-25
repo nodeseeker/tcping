@@ -19,6 +19,7 @@
 
 ## 安装方法
 ### 方法一：一键安装脚本
+**因为需要安装至`/usr/local/bin`目录，故需要root权限执行以下脚本**
 **境外**服务器运行以下脚本：
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh) --force
