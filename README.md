@@ -29,18 +29,10 @@ bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping
 ```
 安装选项:
 ```
-    -h, --help          显示此帮助信息
-    -u, --uninstall     卸载tcping
-    -f, --force         强制安装（跳过确认）
-    -v, --verbose       详细输出
-    --version           显示版本信息
-```
-
-安装选项示例:
-```
-    $SCRIPT_NAME                    # 交互式安装
-    $SCRIPT_NAME --force            # 强制安装
-    $SCRIPT_NAME --uninstall        # 卸载tcping
+-u, --uninstall: 卸载 tcping
+-f, --force: 强制安装（跳过确认）
+-v, --verbose: 详细输出
+-h, --help: 显示帮助信息
 ```
 
 ### 方法二：手动安装 
