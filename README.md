@@ -48,7 +48,7 @@ bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping
 浏览器打开程序的发布页 [https://github.com/nodeseeker/tcping/releases](https://github.com/nodeseeker/tcping/releases)，在列表中找到对应CPU架构和平台的程序（如下图），比如x86_64的Linux系统，下载`tcping-linux-amd64.zip`，而x86_64的Windows，则下载`tcping-windows-amd64.zip`。下载完成后，解压即可得到一个名为`tcping`的文件，直接运行即可。
 
 为了方便使用，建议将`tcping`文件移动到系统的`PATH环境变量`中或者`bin`目录中，这样就可以在任何目录下直接使用`tcping`命令：
-- 如果是Linux平台，建议使用root用户将文件移动到`/usr/bin`中
+- 如果是Linux平台，建议使用root用户将文件移动到`/usr/local/bin`中
 - 如果是Windows平台，建议向PATH环境变量中添加工具位置或放置于`C:\Windows\System32`系统目录中
 - 如果是macOS平台，建议直接将文件移动到`/usr/local/bin`中
 
