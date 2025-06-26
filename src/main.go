@@ -28,6 +28,9 @@ type Statistics struct {
 	minTime        float64
 	maxTime        float64
 	totalTime      float64
+	lastTime       float64 // 上一次的响应时间，用于计算抖动
+	totalJitter    float64 // 总抖动时间
+	jitterCount    int64   // 抖动样本数量
 }
 
 func (s *Statistics) update(elapsed float64, success bool) {
@@ -47,8 +50,20 @@ func (s *Statistics) update(elapsed float64, success bool) {
 	if s.respondedCount == 1 {
 		s.minTime = elapsed
 		s.maxTime = elapsed
+		s.lastTime = elapsed
 		return
 	}
+
+	// 计算抖动 (当前时间与上一次时间的差值的绝对值)
+	if s.respondedCount > 1 {
+		jitter := elapsed - s.lastTime
+		if jitter < 0 {
+			jitter = -jitter
+		}
+		s.totalJitter += jitter
+		s.jitterCount++
+	}
+	s.lastTime = elapsed
 
 	// 更新最小和最大时间
 	if elapsed < s.minTime {
@@ -69,6 +84,16 @@ func (s *Statistics) getStats() (sent, responded int64, min, max, avg float64) {
 	}
 
 	return s.sentCount, s.respondedCount, s.minTime, s.maxTime, avg
+}
+
+func (s *Statistics) getJitter() float64 {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.jitterCount > 0 {
+		return s.totalJitter / float64(s.jitterCount)
+	}
+	return 0.0
 }
 
 type Options struct {
@@ -128,71 +153,74 @@ func printVersion() {
 	fmt.Println(copyright)
 }
 
-func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
+func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, error) {
 	// 尝试标准IP解析
 	if ip := net.ParseIP(address); ip != nil {
 		isV4 := ip.To4() != nil
 		if useIPv4 && !isV4 {
-			return "", fmt.Errorf("地址 %s 不是 IPv4 地址", address)
+			return "", nil, fmt.Errorf("地址 %s 不是 IPv4 地址", address)
 		}
 		if useIPv6 && isV4 {
-			return "", fmt.Errorf("地址 %s 不是 IPv6 地址", address)
+			return "", nil, fmt.Errorf("地址 %s 不是 IPv6 地址", address)
 		}
+		// 直接输入的IP地址，返回单个IP列表
+		var ipList []net.IP
+		ipList = append(ipList, ip)
 		if !isV4 {
-			return "[" + ip.String() + "]", nil
+			return "[" + ip.String() + "]", ipList, nil
 		}
-		return ip.String(), nil
+		return ip.String(), ipList, nil
 	}
 
 	// 最后尝试DNS解析
 	ipList, err := net.LookupIP(address)
 	if err != nil {
-		return "", fmt.Errorf("解析 %s 失败: %v", address, err)
+		return "", nil, fmt.Errorf("解析 %s 失败: %v", address, err)
 	}
 
 	if len(ipList) == 0 {
-		return "", fmt.Errorf("未找到 %s 的 IP 地址", address)
+		return "", nil, fmt.Errorf("未找到 %s 的 IP 地址", address)
 	}
 
 	if useIPv4 {
 		for _, ip := range ipList {
 			if ip.To4() != nil {
-				return ip.String(), nil
+				return ip.String(), ipList, nil
 			}
 		}
-		return "", fmt.Errorf("未找到 %s 的 IPv4 地址", address)
+		return "", ipList, fmt.Errorf("未找到 %s 的 IPv4 地址", address)
 	}
 
 	if useIPv6 {
 		for _, ip := range ipList {
 			if ip.To4() == nil {
-				return "[" + ip.String() + "]", nil
+				return "[" + ip.String() + "]", ipList, nil
 			}
 		}
-		return "", fmt.Errorf("未找到 %s 的 IPv6 地址", address)
+		return "", ipList, fmt.Errorf("未找到 %s 的 IPv6 地址", address)
 	}
 
 	// 如果没有强制指定IP版本，优先使用IPv4地址
 	// 首先查找IPv4地址
 	for _, ip := range ipList {
 		if ip.To4() != nil {
-			return ip.String(), nil
+			return ip.String(), ipList, nil
 		}
 	}
 
 	// 如果没有找到IPv4地址，使用第一个IPv6地址
 	for _, ip := range ipList {
 		if ip.To4() == nil {
-			return "[" + ip.String() + "]", nil
+			return "[" + ip.String() + "]", ipList, nil
 		}
 	}
 
 	// 理论上不应该到达这里，因为ipList不为空
 	ip := ipList[0]
 	if ip.To4() == nil {
-		return "[" + ip.String() + "]", nil
+		return "[" + ip.String() + "]", ipList, nil
 	}
-	return ip.String(), nil
+	return ip.String(), ipList, nil
 }
 
 func getIPType(address string) (isIPv4, isIPv6 bool) {
@@ -245,7 +273,7 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	}
 }
 
-func printTCPingStatistics(stats *Statistics) {
+func printTCPingStatistics(stats *Statistics, opts *Options) {
 	sent, responded, min, max, avg := stats.getStats()
 
 	fmt.Printf("\n\n--- 目标主机 TCP ping 统计 ---\n")
@@ -258,6 +286,12 @@ func printTCPingStatistics(stats *Statistics) {
 		if responded > 0 {
 			fmt.Printf("往返时间(RTT): 最小 = %.2fms, 最大 = %.2fms, 平均 = %.2fms\n",
 				min, max, avg)
+
+			// 在详细模式下显示抖动信息
+			if opts.VerboseMode {
+				jitter := stats.getJitter()
+				fmt.Printf("抖动(Jitter): 平均 = %.2fms\n", jitter)
+			}
 		}
 	}
 }
@@ -381,7 +415,7 @@ func main() {
 	originalHost := host
 
 	// 解析IP地址
-	address, err := resolveAddress(host, useIPv4, useIPv6)
+	address, allIPs, err := resolveAddress(host, useIPv4, useIPv6)
 	if err != nil {
 		handleError(err, 1)
 	}
@@ -395,6 +429,19 @@ func main() {
 	}
 
 	fmt.Printf("正在对 %s (%s - %s) 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
+
+	// 在详细模式下显示所有解析到的IP地址
+	if opts.VerboseMode && len(allIPs) > 1 {
+		fmt.Printf("域名 %s 解析到的所有IP地址:\n", originalHost)
+		for i, ip := range allIPs {
+			if ip.To4() != nil {
+				fmt.Printf("  [%d] IPv4: %s\n", i+1, ip.String())
+			} else {
+				fmt.Printf("  [%d] IPv6: %s\n", i+1, ip.String())
+			}
+		}
+		fmt.Printf("使用IP地址: %s\n\n", ipAddress)
+	}
 	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -450,5 +497,5 @@ func main() {
 	case <-done:
 		// 正常完成
 	}
-	printTCPingStatistics(stats)
+	printTCPingStatistics(stats, opts)
 }
