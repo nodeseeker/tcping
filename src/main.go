@@ -128,17 +128,6 @@ func printVersion() {
 	fmt.Println(copyright)
 }
 
-func validatePort(port string) error {
-	portNum, err := strconv.Atoi(port)
-	if err != nil {
-		return fmt.Errorf("端口号格式无效")
-	}
-	if portNum <= 0 || portNum > 65535 {
-		return fmt.Errorf("端口号必须在 1 到 65535 之间")
-	}
-	return nil
-}
-
 func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
 	// 尝试标准IP解析
 	if ip := net.ParseIP(address); ip != nil {
@@ -206,14 +195,12 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
 	return ip.String(), nil
 }
 
-func isIPv4(address string) bool {
+func getIPType(address string) (isIPv4, isIPv6 bool) {
 	ip := net.ParseIP(address)
-	return ip != nil && ip.To4() != nil
-}
-
-func isIPv6(address string) bool {
-	ip := net.ParseIP(address)
-	return ip != nil && ip.To4() == nil
+	if ip == nil {
+		return false, false
+	}
+	return ip.To4() != nil, ip.To4() == nil
 }
 
 func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string,
@@ -248,13 +235,11 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	}
 
 	// 确保连接被关闭
-	if conn != nil {
-		defer conn.Close()
-	}
+	defer conn.Close()
 	msg := fmt.Sprintf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", ip, port, seq, elapsed)
 	fmt.Print(successText(msg, opts.ColorOutput))
 
-	if opts.VerboseMode && conn != nil {
+	if opts.VerboseMode {
 		localAddr := conn.LocalAddr().String()
 		fmt.Printf("  详细信息: 本地地址=%s, 远程地址=%s:%s\n", localAddr, ip, port)
 	}
@@ -277,7 +262,7 @@ func printTCPingStatistics(stats *Statistics) {
 	}
 }
 
-func colorize(text string, colorCode string, useColor bool) string {
+func colorText(text, colorCode string, useColor bool) string {
 	if !useColor {
 		return text
 	}
@@ -285,15 +270,15 @@ func colorize(text string, colorCode string, useColor bool) string {
 }
 
 func successText(text string, useColor bool) string {
-	return colorize(text, "32", useColor) // 绿色
+	return colorText(text, "32", useColor) // 绿色
 }
 
 func errorText(text string, useColor bool) string {
-	return colorize(text, "31", useColor) // 红色
+	return colorText(text, "31", useColor) // 红色
 }
 
 func infoText(text string, useColor bool) string {
-	return colorize(text, "36", useColor) // 青色
+	return colorText(text, "36", useColor) // 青色
 }
 
 func setupFlags(opts *Options) {
@@ -350,15 +335,14 @@ func validateOptions(opts *Options, args []string) (string, string, error) {
 		port = args[1]
 	} else if opts.Port > 0 {
 		// 如果通过-p参数指定了端口且命令行没有直接指定端口，则使用-p参数的值
-		if opts.Port > 65535 {
-			return "", "", errors.New("端口号必须在 1 到 65535 之间")
-		}
 		port = strconv.Itoa(opts.Port)
 	}
 
 	// 验证端口
-	if err := validatePort(port); err != nil {
-		return "", "", err
+	if portNum, err := strconv.Atoi(port); err != nil {
+		return "", "", fmt.Errorf("端口号格式无效")
+	} else if portNum <= 0 || portNum > 65535 {
+		return "", "", fmt.Errorf("端口号必须在 1 到 65535 之间")
 	}
 
 	return host, port, nil
@@ -389,8 +373,9 @@ func main() {
 	}
 
 	// 确定使用IPv4还是IPv6
-	useIPv4 := opts.UseIPv4 || (!opts.UseIPv6 && isIPv4(host))
-	useIPv6 := opts.UseIPv6 || isIPv6(host)
+	hostIsIPv4, hostIsIPv6 := getIPType(host)
+	useIPv4 := opts.UseIPv4 || (!opts.UseIPv6 && hostIsIPv4)
+	useIPv6 := opts.UseIPv6 || hostIsIPv6
 
 	// 保存原始主机名用于显示
 	originalHost := host
@@ -452,18 +437,17 @@ func main() {
 	}()
 
 	// 等待中断信号或完成
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
 	select {
 	case <-interrupt:
 		fmt.Printf("\n操作被中断。\n")
 		cancel()
-	case <-func() chan struct{} {
-		done := make(chan struct{})
-		go func() {
-			wg.Wait()
-			close(done)
-		}()
-		return done
-	}():
+	case <-done:
 		// 正常完成
 	}
 	printTCPingStatistics(stats)
