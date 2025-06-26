@@ -37,7 +37,7 @@ run_test "Domain IPv6 Test" "./tcping -6 $DOMAIN_TARGET $HTTPS_PORT"
 run_test "Ping with Count Test" "./tcping -n 3 $IPV4_TARGET $PORT"
 
 # 测试指定间隔时间
-run_test "Ping with Interval Test" "./tcping -t 2 $IPV4_TARGET $PORT"
+run_test "Ping with Interval Test" "./tcping -t 2000 $IPV4_TARGET $PORT"
 
 # 测试超时时间
 run_test "Ping with Timeout Test" "./tcping -w 100 $IPV4_TARGET $PORT"
