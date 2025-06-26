@@ -11,45 +11,40 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 const (
-	version     = "v1.7.1"
+	version     = "v1.7.3"
 	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
 )
 
 type Statistics struct {
-	sync.RWMutex         // 使用读写锁以允许并发读取
-	sentCount      int64 // 使用int64确保原子操作安全
+	sync.Mutex
+	sentCount      int64
 	respondedCount int64
 	minTime        float64
 	maxTime        float64
-	avgTime        float64
-	totalTime      float64 // 添加总时间以简化平均计算
+	totalTime      float64
 }
 
 func (s *Statistics) update(elapsed float64, success bool) {
-	// 原子操作增加发送计数，无需加锁
-	atomic.AddInt64(&s.sentCount, 1)
+	s.Lock()
+	defer s.Unlock()
+
+	s.sentCount++
 
 	if !success {
 		return
 	}
 
-	// 对于成功响应的更新需要加锁
-	s.Lock()
-	defer s.Unlock()
-
-	newCount := atomic.AddInt64(&s.respondedCount, 1)
+	s.respondedCount++
 	s.totalTime += elapsed
-	s.avgTime = s.totalTime / float64(newCount)
 
 	// 首次响应特殊处理
-	if newCount == 1 {
+	if s.respondedCount == 1 {
 		s.minTime = elapsed
 		s.maxTime = elapsed
 		return
@@ -64,12 +59,16 @@ func (s *Statistics) update(elapsed float64, success bool) {
 	}
 }
 
-// 添加新的方法，获取统计信息，使用读锁减少阻塞
 func (s *Statistics) getStats() (sent, responded int64, min, max, avg float64) {
-	s.RLock()
-	defer s.RUnlock()
+	s.Lock()
+	defer s.Unlock()
 
-	return s.sentCount, s.respondedCount, s.minTime, s.maxTime, s.avgTime
+	avg = 0.0
+	if s.respondedCount > 0 {
+		avg = s.totalTime / float64(s.respondedCount)
+	}
+
+	return s.sentCount, s.respondedCount, s.minTime, s.maxTime, avg
 }
 
 type Options struct {
@@ -119,8 +118,6 @@ func printHelp() {
     tcping -p 443 google.com         	# 使用-p参数指定端口
     tcping -4 -n 5 8.8.8.8 443       	# IPv4, 5次请求
     tcping -w 2000 example.com 22    	# 2秒超时
-    tcping -4 -n 5 134744072 443     	# 十进制IPv4格式, 8.8.8.8
-    tcping 0x08080808 80             	# 十六进制IPv4格式, 8.8.8.8
     tcping -c -v example.com 443     	# 彩色输出和详细模式
 
 `, programName, version, programName)
@@ -142,53 +139,7 @@ func validatePort(port string) error {
 	return nil
 }
 
-func parseNumericIPv4(address string) net.IP {
-	// Try decimal first
-	if decIP, err := strconv.ParseUint(address, 10, 32); err == nil {
-		return net.IPv4(
-			byte(decIP>>24),
-			byte(decIP>>16),
-			byte(decIP>>8),
-			byte(decIP),
-		).To4()
-	}
-
-	// Try hexadecimal (with or without 0x prefix)
-	addr := strings.ToLower(address)
-	addr = strings.TrimPrefix(addr, "0x")
-	if hexIP, err := strconv.ParseUint(addr, 16, 32); err == nil {
-		return net.IPv4(
-			byte(hexIP>>24),
-			byte(hexIP>>16),
-			byte(hexIP>>8),
-			byte(hexIP),
-		).To4()
-	}
-
-	return nil
-}
-
 func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
-	// 检查IPv6数字格式
-	if useIPv6 {
-		if _, err := strconv.ParseUint(address, 10, 32); err == nil {
-			return "", errors.New("IPv6 地址不支持十进制格式")
-		}
-		lowerAddr := strings.ToLower(address)
-		if strings.HasPrefix(lowerAddr, "0x") {
-			if _, err := strconv.ParseUint(strings.TrimPrefix(lowerAddr, "0x"), 16, 32); err == nil {
-				return "", errors.New("IPv6 地址不支持十六进制格式")
-			}
-		}
-	}
-
-	// 尝试解析数字格式IPv4地址
-	if useIPv4 || !useIPv6 {
-		if ip := parseNumericIPv4(address); ip != nil {
-			return ip.String(), nil
-		}
-	}
-
 	// 尝试标准IP解析
 	if ip := net.ParseIP(address); ip != nil {
 		isV4 := ip.To4() != nil
@@ -256,75 +207,38 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
 }
 
 func isIPv4(address string) bool {
-	if parseNumericIPv4(address) != nil {
-		return true
-	}
-	return net.ParseIP(address) != nil && strings.Count(address, ":") == 0
+	ip := net.ParseIP(address)
+	return ip != nil && ip.To4() != nil
 }
 
 func isIPv6(address string) bool {
-	return strings.Count(address, ":") >= 2
+	ip := net.ParseIP(address)
+	return ip != nil && ip.To4() == nil
 }
 
-// 修改函数签名，添加context参数
 func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string,
 	opts *Options) {
 	// 创建可取消的连接上下文，继承父上下文
 	dialCtx, dialCancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
-
-	// 确保在函数返回时取消上下文，防止资源泄漏
 	defer dialCancel()
 
-	// 创建完成通道，用于确保所有操作完成
-	done := make(chan struct{})
-	var conn net.Conn
-	var err error
-	var elapsed float64
+	start := time.Now()
+	var d net.Dialer
+	conn, err := d.DialContext(dialCtx, "tcp", address+":"+port)
+	elapsed := float64(time.Since(start).Microseconds()) / 1000.0
 
-	// 启动协程执行连接操作
-	go func() {
-		start := time.Now()
-		var d net.Dialer
-		conn, err = d.DialContext(dialCtx, "tcp", address+":"+port)
-		elapsed = float64(time.Since(start).Microseconds()) / 1000.0
-		close(done)
-	}()
-
-	// 等待连接完成或上下文取消
-	select {
-	case <-dialCtx.Done():
-		// 如果是主上下文取消，显示中断信息
-		if ctx.Err() == context.Canceled {
-			msg := "\n操作被中断, 连接尝试已中止\n"
-			fmt.Print(infoText(msg, opts.ColorOutput))
-			return
-		}
-		// 超时错误处理
-		<-done // 等待连接协程完成
-		err = fmt.Errorf("连接超时")
-	case <-done:
-		// 连接完成，继续处理
+	// 检查是否因为主上下文取消而失败
+	if ctx.Err() == context.Canceled {
+		msg := "\n操作被中断, 连接尝试已中止\n"
+		fmt.Print(infoText(msg, opts.ColorOutput))
+		return
 	}
 
 	success := err == nil
 	stats.update(elapsed, success)
 
 	if !success {
-		// 修改错误消息格式，去除重复的IP:端口信息
-		errMsg := fmt.Sprintf("%v", err)
-
-		// 清理错误信息
-		targetAddr := address + ":" + port
-		if strings.Contains(errMsg, targetAddr) {
-			errParts := strings.Split(errMsg, targetAddr)
-			if len(errParts) > 1 && strings.HasPrefix(errMsg, "dial ") {
-				prefix := strings.Split(errMsg, targetAddr)[0]
-				suffix := strings.Join(strings.Split(errMsg, targetAddr)[1:], "")
-				errMsg = prefix + suffix
-			}
-		}
-
-		msg := fmt.Sprintf("TCP连接失败 %s:%s: seq=%d 错误=%s\n", ip, port, seq, errMsg)
+		msg := fmt.Sprintf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", ip, port, seq, err)
 		fmt.Print(errorText(msg, opts.ColorOutput))
 
 		if opts.VerboseMode {
@@ -382,46 +296,30 @@ func infoText(text string, useColor bool) string {
 	return colorize(text, "36", useColor) // 青色
 }
 
-// 处理短选项和长选项映射的函数
 func setupFlags(opts *Options) {
 	// 定义命令行标志，同时设置短选项和长选项
-	ipv4 := flag.Bool("4", false, "使用 IPv4 地址")
-	ipv6 := flag.Bool("6", false, "使用 IPv6 地址")
-	count := flag.Int("n", 0, "发送请求次数 (默认: 无限)")
-	interval := flag.Int("t", 1000, "请求间隔（毫秒）")
-	timeout := flag.Int("w", 1000, "连接超时（毫秒）")
-	port := flag.Int("p", 0, "指定要连接的端口 (默认: 80)")
-	color := flag.Bool("c", false, "启用彩色输出")
-	verbose := flag.Bool("v", false, "启用详细模式")
-	version := flag.Bool("V", false, "显示版本信息")
-	help := flag.Bool("h", false, "显示帮助信息")
+	flag.BoolVar(&opts.UseIPv4, "4", false, "使用 IPv4 地址")
+	flag.BoolVar(&opts.UseIPv4, "ipv4", false, "使用 IPv4 地址")
+	flag.BoolVar(&opts.UseIPv6, "6", false, "使用 IPv6 地址")
+	flag.BoolVar(&opts.UseIPv6, "ipv6", false, "使用 IPv6 地址")
+	flag.IntVar(&opts.Count, "n", 0, "发送请求次数 (默认: 无限)")
+	flag.IntVar(&opts.Count, "count", 0, "发送请求次数 (默认: 无限)")
+	flag.IntVar(&opts.Interval, "t", 1000, "请求间隔（毫秒）")
+	flag.IntVar(&opts.Interval, "interval", 1000, "请求间隔（毫秒）")
+	flag.IntVar(&opts.Timeout, "w", 1000, "连接超时（毫秒）")
+	flag.IntVar(&opts.Timeout, "timeout", 1000, "连接超时（毫秒）")
+	flag.IntVar(&opts.Port, "p", 0, "指定要连接的端口 (默认: 80)")
+	flag.IntVar(&opts.Port, "port", 0, "指定要连接的端口 (默认: 80)")
+	flag.BoolVar(&opts.ColorOutput, "c", false, "启用彩色输出")
+	flag.BoolVar(&opts.ColorOutput, "color", false, "启用彩色输出")
+	flag.BoolVar(&opts.VerboseMode, "v", false, "启用详细模式")
+	flag.BoolVar(&opts.VerboseMode, "verbose", false, "启用详细模式")
+	flag.BoolVar(&opts.ShowVersion, "V", false, "显示版本信息")
+	flag.BoolVar(&opts.ShowVersion, "version", false, "显示版本信息")
+	flag.BoolVar(&opts.ShowHelp, "h", false, "显示帮助信息")
+	flag.BoolVar(&opts.ShowHelp, "help", false, "显示帮助信息")
 
-	// 设置长选项别名
-	flag.BoolVar(ipv4, "ipv4", false, "使用 IPv4 地址")
-	flag.BoolVar(ipv6, "ipv6", false, "使用 IPv6 地址")
-	flag.IntVar(count, "count", 0, "发送请求次数 (默认: 无限)")
-	flag.IntVar(interval, "interval", 1000, "请求间隔（毫秒）")
-	flag.IntVar(timeout, "timeout", 1000, "连接超时（毫秒）")
-	flag.IntVar(port, "port", 0, "指定要连接的端口 (默认: 80)")
-	flag.BoolVar(color, "color", false, "启用彩色输出")
-	flag.BoolVar(verbose, "verbose", false, "启用详细模式")
-	flag.BoolVar(version, "version", false, "显示版本信息")
-	flag.BoolVar(help, "help", false, "显示帮助信息")
-
-	// 解析命令行参数
 	flag.Parse()
-
-	// 设置选项结构
-	opts.UseIPv4 = *ipv4
-	opts.UseIPv6 = *ipv6
-	opts.Count = *count
-	opts.Interval = *interval
-	opts.Timeout = *timeout
-	opts.Port = *port
-	opts.ColorOutput = *color
-	opts.VerboseMode = *verbose
-	opts.ShowVersion = *version
-	opts.ShowHelp = *help
 }
 
 // 新增集中的参数验证函数
@@ -524,22 +422,16 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	// 创建错误通道
-	errChan := make(chan error, 1)
-
 	// 启动ping协程
 	go func() {
 		defer wg.Done()
-		defer signal.Stop(interrupt) // 停止信号捕获
 
-	pingLoop:
 		for i := 0; opts.Count == 0 || i < opts.Count; i++ {
 			// 检查上下文是否已取消
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				// 继续执行
 			}
 
 			// 执行ping
@@ -547,7 +439,7 @@ func main() {
 
 			// 检查是否完成所有请求
 			if opts.Count != 0 && i == opts.Count-1 {
-				break pingLoop
+				break
 			}
 
 			// 等待下一次ping的间隔
@@ -555,13 +447,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Duration(opts.Interval) * time.Millisecond):
-				// 继续下一次ping
 			}
-		}
-		// 所有ping完成，发送nil到错误通道表示正常完成
-		select {
-		case errChan <- nil:
-		default:
 		}
 	}()
 
@@ -569,15 +455,16 @@ func main() {
 	select {
 	case <-interrupt:
 		fmt.Printf("\n操作被中断。\n")
-		cancel() // 取消上下文
-	case err := <-errChan:
-		if err != nil {
-			handleError(err, 1)
-		}
+		cancel()
+	case <-func() chan struct{} {
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+		return done
+	}():
 		// 正常完成
 	}
-
-	// 等待ping协程完成
-	wg.Wait()
 	printTCPingStatistics(stats)
 }
