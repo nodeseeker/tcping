@@ -232,6 +232,22 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, error) {
 		return "", fmt.Errorf("未找到 %s 的 IPv6 地址", address)
 	}
 
+	// 如果没有强制指定IP版本，优先使用IPv4地址
+	// 首先查找IPv4地址
+	for _, ip := range ipList {
+		if ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+
+	// 如果没有找到IPv4地址，使用第一个IPv6地址
+	for _, ip := range ipList {
+		if ip.To4() == nil {
+			return "[" + ip.String() + "]", nil
+		}
+	}
+
+	// 理论上不应该到达这里，因为ipList不为空
 	ip := ipList[0]
 	if ip.To4() == nil {
 		return "[" + ip.String() + "]", nil
