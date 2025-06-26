@@ -38,37 +38,7 @@
 
 ## 📦 安装方法
 
-### 方法一：一键安装脚本（推荐）
-
-#### 🌍 境外服务器
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh) --force
-```
-
-#### 🇨🇳 境内服务器（国内优化版）
-```bash
-bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
-```
-
-> **注意：** 脚本会自动安装到 `/usr/local/bin` 目录，需要root权限
-
-#### 📋 安装脚本选项
-
-| 选项 | 长选项 | 说明 |
-|------|--------|------|
-| `-u` | `--uninstall` | 卸载 tcping |
-| `-f` | `--force` | 强制安装（跳过确认） |
-| `-v` | `--verbose` | 详细输出安装过程 |
-| `-h` | `--help` | 显示帮助信息 |
-
-#### 🔄 脚本功能特性
-- **智能检测**：自动检测系统架构和已安装版本
-- **版本管理**：支持安装、更新、卸载操作
-- **依赖处理**：自动检测并安装必要依赖（curl、unzip等）
-- **多源下载**：国内版本支持多个镜像源，提高下载成功率
-- **错误处理**：完善的错误处理和用户提示
-
-### 方法二：手动安装
+### 方法一：手动安装
 
 #### 📥 下载预编译二进制文件 
 
@@ -104,6 +74,39 @@ TCPing 版本 v1.7.1
 Copyright (c) 2025. All rights reserved.
 ```
 
+
+
+### 方法二：
+
+一键安装脚本（推荐）
+
+#### 🌍 境外服务器
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh) --force
+```
+
+#### 🇨🇳 境内服务器（国内优化版）
+```bash
+bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
+```
+
+> **注意：** 脚本会自动安装到 `/usr/local/bin` 目录，需要root权限
+
+#### 📋 安装脚本选项
+
+| 选项 | 长选项 | 说明 |
+|------|--------|------|
+| `-u` | `--uninstall` | 卸载 tcping |
+| `-f` | `--force` | 强制安装（跳过确认） |
+| `-v` | `--verbose` | 详细输出安装过程 |
+| `-h` | `--help` | 显示帮助信息 |
+
+#### 🔄 脚本功能特性
+- **智能检测**：自动检测系统架构和已安装版本
+- **版本管理**：支持安装、更新、卸载操作
+- **依赖处理**：自动检测并安装必要依赖（curl、unzip等）
+- **多源下载**：国内版本支持多个镜像源，提高下载成功率
+- **错误处理**：完善的错误处理和用户提示
 
 
 ## 🚀 使用方法
