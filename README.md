@@ -1,8 +1,8 @@
 # TCPing
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-v1.7.3-green.svg)](https://github.com/nodeseeker/tcping/releases)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-blue.svg)](https://golang.org/)
+[![Version](https://img.shields.io/badge/Version-v1.7.4-green.svg)](https://github.com/nodeseeker/tcping/releases)
 
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
