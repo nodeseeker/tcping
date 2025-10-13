@@ -6,14 +6,12 @@
 
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
-
-## ✨ 功能概述
-
-
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="50%" />
+  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="60%" />
 </p>
 
+
+## ✨ 功能概述
 
 **TCPing** 是一个轻量级、高效的 TCP 连接测试工具，具备以下特性：
 
@@ -55,11 +53,12 @@
 
 #### 🗂️ 支持的平台和架构
 
-| 操作系统 | 支持架构 | 下载文件示例 |
-|----------|----------|-------------|
-| **Linux** | amd64, 386, arm64, arm, loong64 | `tcping-linux-amd64.zip` |
-| **Windows** | amd64, 386, arm64, arm | `tcping-windows-amd64.zip` |
-| **macOS** | amd64, arm64 | `tcping-darwin-amd64.zip` |
+| 操作系统 | 支持架构 |
+|----------|----------|
+| **Linux** | amd64, 386, arm64, arm, loong64 |
+| **Windows** | amd64, 386, arm64, arm |
+| **macOS** | amd64, arm64 |
+
 
 #### 🔧 安装步骤
 
@@ -72,12 +71,19 @@
 - **Linux/macOS**：`/usr/local/bin/tcping`
 - **Windows**：`C:\Windows\System32\tcping.exe` 或添加到PATH环境变量
 
+#### 🛠️ 权限设置
+对于Linux/Unix-like系统，如果非`root`用户无法使用，则需要在安装后，使用`root`执行一次以下命令即可确保可执行权限：
+```bash
+chown root:root /usr/local/bin/tcping
+chmod +x /usr/local/bin/tcping
+```
+
 #### ✅ 验证安装
 
 ```bash
 tcping --version
 
-TCPing 版本 v1.7.3
+TCPing 版本 v1.7.4
 Copyright (c) 2025. All rights reserved.
 ```
 
