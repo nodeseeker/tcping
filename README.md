@@ -9,9 +9,13 @@
 
 ## ✨ 功能概述
 
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="50%" />
+</p>
+
+
 **TCPing** 是一个轻量级、高效的 TCP 连接测试工具，具备以下特性：
-
-
 
 ### 🌐 多协议支持
 - 支持 IPv4 和 IPv6 地址解析
