@@ -7,7 +7,7 @@
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="60%" />
+  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="80%" />
 </p>
 
 
