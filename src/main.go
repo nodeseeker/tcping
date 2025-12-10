@@ -316,27 +316,32 @@ func infoText(text string, useColor bool) string {
 }
 
 func setupFlags(opts *Options) {
+	// 自定义 Usage 函数，使用我们自己的帮助信息
+	flag.Usage = func() {
+		printHelp()
+	}
+
 	// 定义命令行标志，同时设置短选项和长选项
-	flag.BoolVar(&opts.UseIPv4, "4", false, "使用 IPv4 地址")
-	flag.BoolVar(&opts.UseIPv4, "ipv4", false, "使用 IPv4 地址")
-	flag.BoolVar(&opts.UseIPv6, "6", false, "使用 IPv6 地址")
-	flag.BoolVar(&opts.UseIPv6, "ipv6", false, "使用 IPv6 地址")
-	flag.IntVar(&opts.Count, "n", 0, "发送请求次数 (默认: 无限)")
-	flag.IntVar(&opts.Count, "count", 0, "发送请求次数 (默认: 无限)")
-	flag.IntVar(&opts.Interval, "t", 1000, "请求间隔（毫秒）")
-	flag.IntVar(&opts.Interval, "interval", 1000, "请求间隔（毫秒）")
-	flag.IntVar(&opts.Timeout, "w", 1000, "连接超时（毫秒）")
-	flag.IntVar(&opts.Timeout, "timeout", 1000, "连接超时（毫秒）")
-	flag.IntVar(&opts.Port, "p", 0, "指定要连接的端口 (默认: 80)")
-	flag.IntVar(&opts.Port, "port", 0, "指定要连接的端口 (默认: 80)")
-	flag.BoolVar(&opts.ColorOutput, "c", false, "启用彩色输出")
-	flag.BoolVar(&opts.ColorOutput, "color", false, "启用彩色输出")
-	flag.BoolVar(&opts.VerboseMode, "v", false, "启用详细模式")
-	flag.BoolVar(&opts.VerboseMode, "verbose", false, "启用详细模式")
-	flag.BoolVar(&opts.ShowVersion, "V", false, "显示版本信息")
-	flag.BoolVar(&opts.ShowVersion, "version", false, "显示版本信息")
-	flag.BoolVar(&opts.ShowHelp, "h", false, "显示帮助信息")
-	flag.BoolVar(&opts.ShowHelp, "help", false, "显示帮助信息")
+	flag.BoolVar(&opts.UseIPv4, "4", false, "")
+	flag.BoolVar(&opts.UseIPv4, "ipv4", false, "")
+	flag.BoolVar(&opts.UseIPv6, "6", false, "")
+	flag.BoolVar(&opts.UseIPv6, "ipv6", false, "")
+	flag.IntVar(&opts.Count, "n", 0, "")
+	flag.IntVar(&opts.Count, "count", 0, "")
+	flag.IntVar(&opts.Interval, "t", 1000, "")
+	flag.IntVar(&opts.Interval, "interval", 1000, "")
+	flag.IntVar(&opts.Timeout, "w", 1000, "")
+	flag.IntVar(&opts.Timeout, "timeout", 1000, "")
+	flag.IntVar(&opts.Port, "p", 0, "")
+	flag.IntVar(&opts.Port, "port", 0, "")
+	flag.BoolVar(&opts.ColorOutput, "c", false, "")
+	flag.BoolVar(&opts.ColorOutput, "color", false, "")
+	flag.BoolVar(&opts.VerboseMode, "v", false, "")
+	flag.BoolVar(&opts.VerboseMode, "verbose", false, "")
+	flag.BoolVar(&opts.ShowVersion, "V", false, "")
+	flag.BoolVar(&opts.ShowVersion, "version", false, "")
+	flag.BoolVar(&opts.ShowHelp, "h", false, "")
+	flag.BoolVar(&opts.ShowHelp, "help", false, "")
 
 	flag.Parse()
 }
