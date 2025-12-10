@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	version     = "v1.7.4"
-	copyright   = "Copyright (c) 2025. All rights reserved."
+	version     = "v1.8.0"
+	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
 )
 
@@ -343,6 +343,48 @@ func setupFlags(opts *Options) {
 
 // 新增集中的参数验证函数
 func validateOptions(opts *Options, args []string) (string, string, error) {
+	// 手动解析 flag.Args() 中未被 flag 包解析的选项
+	// Go 的 flag 包在遇到非选项参数后会停止解析
+	optionsWithValue := map[string]*int{
+		"-n": &opts.Count, "--count": &opts.Count,
+		"-t": &opts.Interval, "--interval": &opts.Interval,
+		"-w": &opts.Timeout, "--timeout": &opts.Timeout,
+		"-p": &opts.Port, "--port": &opts.Port,
+	}
+
+	boolOptions := map[string]*bool{
+		"-4": &opts.UseIPv4, "--ipv4": &opts.UseIPv4,
+		"-6": &opts.UseIPv6, "--ipv6": &opts.UseIPv6,
+		"-c": &opts.ColorOutput, "--color": &opts.ColorOutput,
+		"-v": &opts.VerboseMode, "--verbose": &opts.VerboseMode,
+		"-V": &opts.ShowVersion, "--version": &opts.ShowVersion,
+		"-h": &opts.ShowHelp, "--help": &opts.ShowHelp,
+	}
+
+	var positionalArgs []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if ptr, ok := optionsWithValue[arg]; ok {
+			// 带值的选项
+			if i+1 < len(args) {
+				if val, err := strconv.Atoi(args[i+1]); err == nil {
+					*ptr = val
+					i++ // 跳过值
+					continue
+				}
+			}
+		} else if ptr, ok := boolOptions[arg]; ok {
+			// 布尔选项
+			*ptr = true
+			continue
+		} else if !strings.HasPrefix(arg, "-") {
+			// 位置参数
+			positionalArgs = append(positionalArgs, arg)
+			continue
+		}
+		// 未知选项，跳过
+	}
+
 	// 验证基本选项
 	if opts.UseIPv4 && opts.UseIPv6 {
 		return "", "", errors.New("无法同时使用 -4 和 -6 标志")
@@ -357,16 +399,16 @@ func validateOptions(opts *Options, args []string) (string, string, error) {
 	}
 
 	// 验证主机参数
-	if len(args) < 1 {
+	if len(positionalArgs) < 1 {
 		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
 	}
 
-	host := args[0]
+	host := positionalArgs[0]
 	port := "80" // 默认端口为 80
 
 	// 优先级：命令行直接指定的端口 > -p参数指定的端口 > 默认端口80
-	if len(args) > 1 {
-		port = args[1]
+	if len(positionalArgs) > 1 {
+		port = positionalArgs[1]
 	} else if opts.Port > 0 {
 		// 如果通过-p参数指定了端口且命令行没有直接指定端口，则使用-p参数的值
 		port = strconv.Itoa(opts.Port)
