@@ -1,0 +1,94 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Create output directory
+        run: mkdir -p bin
+
+      - name: Build for all platforms
+        env:
+          CGO_ENABLED: 0
+        run: |
+          # 定义所有目标平台
+          platforms=(
+            "darwin/amd64"
+            "darwin/arm64"
+            "linux/386"
+            "linux/amd64"
+            "linux/arm"
+            "linux/arm64"
+            "linux/loong64"
+            "windows/386"
+            "windows/amd64"
+            "windows/arm"
+            "windows/arm64"
+          )
+
+          for platform in "${platforms[@]}"; do
+            GOOS=$(echo $platform | cut -d'/' -f1)
+            GOARCH=$(echo $platform | cut -d'/' -f2)
+            
+            echo "Building for ${GOOS}/${GOARCH}..."
+            
+            # 设置输出文件名
+            output_name="tcping"
+            if [ "$GOOS" = "windows" ]; then
+              output_name="tcping.exe"
+            fi
+            
+            # 编译
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-w -s" -o "$output_name" ./src/main.go
+            
+            # 打包成 zip
+            zip_name="tcping-${GOOS}-${GOARCH}.zip"
+            zip -j "bin/${zip_name}" "$output_name"
+            
+            # 清理编译产物
+            rm "$output_name"
+            
+            echo "Created bin/${zip_name}"
+          done
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd bin
+          sha256sum *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcping-binaries
+          path: bin/*
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            bin/*.zip
+            bin/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

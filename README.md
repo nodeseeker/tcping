@@ -83,8 +83,8 @@ chmod +x /usr/local/bin/tcping
 ```bash
 tcping --version
 
-TCPing 版本 v1.7.4
-Copyright (c) 2025. All rights reserved.
+TCPing 版本 v1.8.0
+Copyright (c) 2026. All rights reserved.
 ```
 
 
@@ -398,7 +398,7 @@ TCPing 提供了全面的错误处理机制：
 **Q: 为什么有些域名无法进行IPv6测试？**
 > **A:** 可能的原因：
 > - 域名未配置AAAA记录（IPv6 DNS记录）
-> - 您的网络不支持IPv6连接
+> - 网络不支持IPv6连接
 > - DNS服务器不支持IPv6解析
 > 
 > **解决方案**：使用 `nslookup -type=AAAA domain.com` 检查IPv6记录
