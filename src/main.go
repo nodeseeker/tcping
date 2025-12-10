@@ -273,10 +273,10 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	}
 }
 
-func printTCPingStatistics(stats *Statistics, opts *Options) {
+func printTCPingStatistics(stats *Statistics, opts *Options, host string) {
 	sent, responded, min, max, avg := stats.getStats()
 
-	fmt.Printf("\n\n--- 目标主机 TCP ping 统计 ---\n")
+	fmt.Printf("\n\n--- %s 的 TCP ping 统计 ---\n", host)
 
 	if sent > 0 {
 		lossRate := float64(sent-responded) / float64(sent) * 100
@@ -428,7 +428,7 @@ func main() {
 		ipAddress = address[1 : len(address)-1]
 	}
 
-	fmt.Printf("正在对 %s (%s - %s) 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
+	fmt.Printf("正在对 %s [%s - %s] 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
 
 	// 在详细模式下显示所有解析到的IP地址
 	if opts.VerboseMode && len(allIPs) > 1 {
@@ -497,5 +497,5 @@ func main() {
 	case <-done:
 		// 正常完成
 	}
-	printTCPingStatistics(stats, opts)
+	printTCPingStatistics(stats, opts, originalHost)
 }
