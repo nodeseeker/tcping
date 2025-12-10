@@ -273,10 +273,10 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	}
 }
 
-func printTCPingStatistics(stats *Statistics, opts *Options, host string) {
+func printTCPingStatistics(stats *Statistics, opts *Options, host, port string) {
 	sent, responded, min, max, avg := stats.getStats()
 
-	fmt.Printf("\n\n--- %s 的 TCP ping 统计 ---\n", host)
+	fmt.Printf("\n\n--- 目标 %s 端口 %s 的 TCP ping 统计 ---\n", host, port)
 
 	if sent > 0 {
 		lossRate := float64(sent-responded) / float64(sent) * 100
@@ -428,7 +428,13 @@ func main() {
 		ipAddress = address[1 : len(address)-1]
 	}
 
-	fmt.Printf("正在对 %s [%s - %s] 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
+	// 仅当用户输入的是域名时，显示额外的 [IP类型 - IP] 信息；
+	// 如果用户输入的是 IP，则不显示该方括号部分。
+	if net.ParseIP(originalHost) == nil {
+		fmt.Printf("正在对 %s [%s - %s] 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
+	} else {
+		fmt.Printf("正在对 %s 端口 %s 执行 TCP Ping\n", originalHost, port)
+	}
 
 	// 在详细模式下显示所有解析到的IP地址
 	if opts.VerboseMode && len(allIPs) > 1 {
@@ -502,8 +508,8 @@ func main() {
 	// - 如果用户输入的是 IP，则只显示 IP
 	displayHost := ipAddress
 	if net.ParseIP(originalHost) == nil {
-		displayHost = fmt.Sprintf("%s (%s)", originalHost, ipAddress)
+		displayHost = fmt.Sprintf("%s [%s]", originalHost, ipAddress)
 	}
 
-	printTCPingStatistics(stats, opts, displayHost)
+	printTCPingStatistics(stats, opts, displayHost, port)
 }
