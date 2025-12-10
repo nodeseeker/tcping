@@ -497,5 +497,13 @@ func main() {
 	case <-done:
 		// 正常完成
 	}
-	printTCPingStatistics(stats, opts, originalHost)
+	// 根据输入判断显示格式：
+	// - 如果用户输入的是域名，则显示 "域名 (IP)"
+	// - 如果用户输入的是 IP，则只显示 IP
+	displayHost := ipAddress
+	if net.ParseIP(originalHost) == nil {
+		displayHost = fmt.Sprintf("%s (%s)", originalHost, ipAddress)
+	}
+
+	printTCPingStatistics(stats, opts, displayHost)
 }
