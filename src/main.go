@@ -17,7 +17,7 @@ import (
 
 const (
 	version     = "v1.8.0"
-	copyright   = "Copyright (c) 2026. All rights reserved."
+	copyright   = "Copyright (c) 2025. All rights reserved."
 	programName = "TCPing"
 )
 
@@ -139,8 +139,9 @@ func printHelp() {
 
 示例:
     tcping google.com                	# 基本用法 (默认端口 80)
-    tcping google.com 80             	# 基本用法指定端口
-    tcping -p 443 google.com         	# 使用-p参数指定端口
+    tcping google.com 443            	# 基本用法指定端口
+    tcping google.com:443            	# 使用 host:port 格式
+    tcping -p 443 google.com         	# 使用 -p 参数指定端口
     tcping -4 -n 5 8.8.8.8 443       	# IPv4, 5次请求
     tcping -w 2000 example.com 22    	# 2秒超时
     tcping -c -v example.com 443     	# 彩色输出和详细模式
@@ -223,12 +224,29 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, er
 	return ip.String(), ipList, nil
 }
 
-func getIPType(address string) (isIPv4, isIPv6 bool) {
-	ip := net.ParseIP(address)
-	if ip == nil {
-		return false, false
+// parseHostPort 解析 host:port 格式的地址
+func parseHostPort(input string) (host string, port string, hasPort bool) {
+	// 检查是否是 IPv6 地址格式 [host]:port
+	if strings.HasPrefix(input, "[") {
+		if idx := strings.LastIndex(input, "]:"); idx != -1 {
+			return input[1:idx], input[idx+2:], true
+		}
+		// 纯 IPv6 地址 [host]
+		if strings.HasSuffix(input, "]") {
+			return input[1 : len(input)-1], "", false
+		}
+		return input, "", false
 	}
-	return ip.To4() != nil, ip.To4() == nil
+
+	// 检查是否是 host:port 格式（非 IPv6）
+	if idx := strings.LastIndex(input, ":"); idx != -1 {
+		// 确保不是 IPv6 地址（IPv6 有多个冒号）
+		if strings.Count(input, ":") == 1 {
+			return input[:idx], input[idx+1:], true
+		}
+	}
+
+	return input, "", false
 }
 
 func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string,
@@ -399,8 +417,8 @@ func validateOptions(opts *Options, args []string) (string, string, error) {
 		return "", "", errors.New("间隔时间不能为负值")
 	}
 
-	if opts.Timeout < 0 {
-		return "", "", errors.New("超时时间不能为负值")
+	if opts.Timeout <= 0 {
+		return "", "", errors.New("超时时间必须大于 0")
 	}
 
 	// 验证主机参数
@@ -408,13 +426,19 @@ func validateOptions(opts *Options, args []string) (string, string, error) {
 		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
 	}
 
-	host := positionalArgs[0]
+	hostInput := positionalArgs[0]
 	port := "80" // 默认端口为 80
 
-	// 优先级：命令行直接指定的端口 > -p参数指定的端口 > 默认端口80
+	// 解析 host:port 格式
+	host, parsedPort, hasPort := parseHostPort(hostInput)
+	if hasPort {
+		port = parsedPort
+	}
+
+	// 优先级：命令行直接指定的端口 > host:port格式 > -p参数指定的端口 > 默认端口80
 	if len(positionalArgs) > 1 {
 		port = positionalArgs[1]
-	} else if opts.Port > 0 {
+	} else if !hasPort && opts.Port > 0 {
 		// 如果通过-p参数指定了端口且命令行没有直接指定端口，则使用-p参数的值
 		port = strconv.Itoa(opts.Port)
 	}
@@ -454,9 +478,8 @@ func main() {
 	}
 
 	// 确定使用IPv4还是IPv6
-	hostIsIPv4, hostIsIPv6 := getIPType(host)
-	useIPv4 := opts.UseIPv4 || (!opts.UseIPv6 && hostIsIPv4)
-	useIPv6 := opts.UseIPv6 || hostIsIPv6
+	useIPv4 := opts.UseIPv4
+	useIPv6 := opts.UseIPv6
 
 	// 保存原始主机名用于显示
 	originalHost := host

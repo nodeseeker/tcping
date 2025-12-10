@@ -165,11 +165,13 @@ $ tcping google.com
 往返时间(RTT): 最小 = 29.78ms, 最大 = 31.45ms, 平均 = 30.45ms
 ```
 
-#### 测试HTTPS端口（443）
+#### 测试指定端口，例如HTTPS端口（443）
 ```bash
 $ tcping google.com 443
 # 或使用 -p 参数
 $ tcping -p 443 google.com
+# 或使用 host:port 格式
+$ tcping google.com:443
 ```
 
 ### 🎯 高级用法
