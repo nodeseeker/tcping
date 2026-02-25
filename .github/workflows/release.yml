@@ -33,6 +33,13 @@ jobs:
         with:
           go-version: ${{ steps.get_go_version.outputs.version }}
 
+      - name: Ensure module dependencies
+        if: always()
+        run: |
+          if [ -f go.mod ]; then
+            go mod tidy
+          fi
+
       - name: Create output directory
         run: mkdir -p bin
 
