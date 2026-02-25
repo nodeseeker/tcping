@@ -280,8 +280,14 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 		return
 	}
 
-	// 确保连接被关闭
-	defer conn.Close()
+	// 确保连接被关闭并检查错误
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			if opts != nil && opts.VerboseMode {
+				fmt.Printf("  关闭连接时出错: %v\n", cerr)
+			}
+		}
+	}()
 	msg := fmt.Sprintf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", ip, port, seq, elapsed)
 	fmt.Print(successText(msg, opts.ColorOutput))
 
