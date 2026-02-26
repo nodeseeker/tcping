@@ -290,8 +290,8 @@ TCP连接失败 203.0.113.1:80: seq=1 错误=连接超时
 
 - 在当前目录自动生成文件并写入（只需 `-o`）：
 ```bash
-$ tcping -n 3 -o example.com
-# 将在当前目录生成类似 tcping_results_example.com_20260226-145710.csv 的文件
+$ tcping -o example.com
+# 将在当前目录生成类似 tcping_results_example.com_20260226-145710.csv 的记录文件
 ```
 
 CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_addr`
@@ -308,6 +308,7 @@ CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_ad
 | 持续监控 | `tcping -t 5000 -c service.com 443` | 每5秒测试一次 |
 | 网络质量分析 | `tcping -v -n 20 target.com 443` | 详细统计含抖动分析 |
 | 多IP域名测试 | `tcping -v cdn.example.com 80` | 查看域名所有IP并测试首个IP |
+| CSV记录 | `tcping -o example.com` | 将结果保存为CSV文件 |
 
 
 
