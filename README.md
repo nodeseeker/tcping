@@ -143,6 +143,8 @@ tcping [选项] <主机> [端口]
 | `-v` | `--verbose` | 启用详细模式（包含抖动统计） | 关闭 |
 | `-V` | `--version` | 显示版本信息 | - |
 | `-h` | `--help` | 显示帮助信息 | - |
+| `-o` | `--csv` | 在当前目录生成 `tcping_results_<name>_<time>.csv`（只需提供 `-o`） | 关闭 |
+ 
 
 
 
@@ -280,6 +282,19 @@ TCP连接失败 203.0.113.1:80: seq=1 错误=连接超时
 --- 目标主机 TCP ping 统计 ---
 已发送 = 2, 已接收 = 0, 丢失 = 2 (100.0% 丢失)
 ```
+
+
+### 📁 CSV 输出示例
+
+在需要将每次连接结果保存为 CSV 的场景下，使用 `-o/--csv`：
+
+- 在当前目录自动生成文件并写入（只需 `-o`）：
+```bash
+$ tcping -n 3 -o example.com
+# 将在当前目录生成类似 tcping_results_example.com_20260226-145710.csv 的文件
+```
+
+CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_addr`
 
 ### 🛠️ 常用场景
 

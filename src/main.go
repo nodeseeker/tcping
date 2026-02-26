@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
@@ -107,6 +108,10 @@ type Options struct {
 	ShowVersion bool
 	ShowHelp    bool
 	Port        int
+	CSVPath     string
+	Host        string
+	CSVChan     chan []string
+	CSVAuto     bool
 }
 
 func handleError(err error, exitCode int) {
@@ -134,6 +139,7 @@ func printHelp() {
     -w, --timeout <毫秒>    连接超时 (默认: 1000毫秒)
     -c, --color             启用彩色输出
     -v, --verbose           启用详细模式，显示更多连接信息
+    -o, --csv               在当前目录生成csv文件记录
     -V, --version           显示版本信息
     -h, --help              显示此帮助信息
 
@@ -277,10 +283,35 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 		if opts.VerboseMode {
 			fmt.Printf("  详细信息: 连接尝试耗时 %.2fms, 目标 %s:%s\n", elapsed, address, port)
 		}
+
+		// 写入 CSV（非阻塞）
+		if opts != nil && opts.CSVChan != nil {
+			timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+			row := []string{
+				timestamp,
+				strconv.Itoa(seq),
+				opts.Host,
+				ip,
+				port,
+				fmt.Sprintf("%.2f", elapsed),
+				strconv.FormatBool(success),
+				fmt.Sprintf("%v", err),
+				"",
+			}
+			select {
+			case opts.CSVChan <- row:
+			default:
+			}
+		}
+
 		return
 	}
 
-	// 确保连接被关闭并检查错误
+	// 获取本地地址并确保连接被关闭
+	localAddr := ""
+	if conn != nil {
+		localAddr = conn.LocalAddr().String()
+	}
 	defer func() {
 		if cerr := conn.Close(); cerr != nil {
 			if opts != nil && opts.VerboseMode {
@@ -294,6 +325,26 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	if opts.VerboseMode {
 		localAddr := conn.LocalAddr().String()
 		fmt.Printf("  详细信息: 本地地址=%s, 远程地址=%s:%s\n", localAddr, ip, port)
+	}
+
+	// 写入 CSV（非阻塞）
+	if opts != nil && opts.CSVChan != nil {
+		timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+		row := []string{
+			timestamp,
+			strconv.Itoa(seq),
+			opts.Host,
+			ip,
+			port,
+			fmt.Sprintf("%.2f", elapsed),
+			strconv.FormatBool(success),
+			"",
+			localAddr,
+		}
+		select {
+		case opts.CSVChan <- row:
+		default:
+		}
 	}
 }
 
@@ -366,8 +417,33 @@ func setupFlags(opts *Options) {
 	flag.BoolVar(&opts.ShowVersion, "version", false, "")
 	flag.BoolVar(&opts.ShowHelp, "h", false, "")
 	flag.BoolVar(&opts.ShowHelp, "help", false, "")
+	flag.BoolVar(&opts.CSVAuto, "o", false, "")
+	flag.BoolVar(&opts.CSVAuto, "csv", false, "")
 
 	flag.Parse()
+}
+
+// sanitizeFilename 将输入字符串中不安全或特殊的字符替换为下划线
+func sanitizeFilename(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	// 移除前后空格
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, r := range s {
+		// 允许字母、数字、点、下划线和短横线
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "unknown"
+	}
+	return out
 }
 
 // 新增集中的参数验证函数
@@ -490,6 +566,9 @@ func main() {
 	// 保存原始主机名用于显示
 	originalHost := host
 
+	// 设置 opts.Host 以便后续 CSV 使用
+	opts.Host = originalHost
+
 	// 解析IP地址
 	address, allIPs, err := resolveAddress(host, useIPv4, useIPv6)
 	if err != nil {
@@ -525,6 +604,9 @@ func main() {
 		fmt.Printf("使用IP地址: %s\n\n", ipAddress)
 	}
 	stats := &Statistics{}
+	// 保存原始 host 到 opts，供 CSV 使用
+	opts.Host = originalHost
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -535,6 +617,60 @@ func main() {
 	// 使用 WaitGroup 来确保后台 goroutine 正确退出
 	var wg sync.WaitGroup
 	wg.Add(1)
+
+	// 仅在用户通过 -o/--csv 指定时，自动在当前目录生成文件名
+	if opts.CSVAuto {
+		opts.CSVPath = fmt.Sprintf("tcping_results_%s_%s.csv", sanitizeFilename(opts.Host), time.Now().Format("20060102-150405"))
+	}
+
+	// 如果启用了 CSV 自动输出，启动写入 goroutine
+	var csvWg sync.WaitGroup
+	if opts.CSVAuto {
+		opts.CSVChan = make(chan []string, 200)
+		csvWg.Add(1)
+		go func(path string, ch chan []string) {
+			defer csvWg.Done()
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "无法打开 CSV 文件 %s: %v\n", path, err)
+				// 取消 CSV 通道，避免后续写入阻塞
+				opts.CSVChan = nil
+				return
+			}
+			defer f.Close()
+
+			writer := csv.NewWriter(f)
+			// 如果文件为空，写 header
+			if fi, err := f.Stat(); err == nil && fi.Size() == 0 {
+				header := []string{"timestamp", "seq", "host", "ip", "port", "elapsed_ms", "success", "error", "local_addr"}
+				if err := writer.Write(header); err != nil {
+					fmt.Fprintf(os.Stderr, "写入 CSV header 失败: %v\n", err)
+				}
+				writer.Flush()
+			}
+
+			for row := range ch {
+				// 清理字段中的换行符，避免破坏 CSV 行结构
+				for i := range row {
+					row[i] = strings.ReplaceAll(row[i], "\n", " ")
+					row[i] = strings.ReplaceAll(row[i], "\r", " ")
+				}
+				if err := writer.Write(row); err != nil {
+					fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
+					continue
+				}
+				writer.Flush()
+				if err := writer.Error(); err != nil {
+					fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
+				}
+			}
+			writer.Flush()
+			if err := writer.Error(); err != nil {
+				fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
+			}
+			_ = f.Sync()
+		}(opts.CSVPath, opts.CSVChan)
+	}
 
 	// 启动ping协程
 	go func() {
@@ -578,6 +714,14 @@ func main() {
 		cancel()
 	case <-done:
 		// 正常完成
+	}
+	// 确保 ping goroutine 已结束，再关闭 CSV 通道并等待写入完成
+	wg.Wait()
+	if opts.CSVChan != nil {
+		close(opts.CSVChan)
+		// 等待 CSV 写入 goroutine 完成
+		// csvWg 在 main 作用域
+		csvWg.Wait()
 	}
 	// 根据输入判断显示格式：
 	// - 如果用户输入的是域名，则显示 "域名 (IP)"
