@@ -17,12 +17,14 @@ import (
 )
 
 const (
-	version     = "v1.9.0"
+	version     = "v1.9.3"
 	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
 
 	defaultCSVFlushEvery = 50
 	defaultCSVFlushTick  = 1 * time.Second
+
+	defaultPort = 80
 )
 
 // =====================
@@ -40,7 +42,7 @@ type Options struct {
 	VerboseMode bool
 	ShowVersion bool
 	ShowHelp    bool
-	Port        int // 0 means "not set" (default 80 unless positional provides)
+	Port        int // default is set by flags (80). Must be 1..65535.
 
 	CSVAuto       bool
 	CSVPath       string
@@ -104,6 +106,12 @@ func (s *Statistics) Update(rtt time.Duration, success bool) {
 	}
 }
 
+func (s *Statistics) SentCount() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sentCount
+}
+
 type StatsSnapshot struct {
 	Sent      int64
 	Received  int64
@@ -119,7 +127,6 @@ func (s *Statistics) Snapshot() StatsSnapshot {
 
 	var avg time.Duration
 	if s.respondedCount > 0 {
-		// time.Duration is int64 underneath; avoid redundant int64 cast.
 		avg = time.Duration(s.sumRTT.Nanoseconds() / s.respondedCount)
 	}
 
@@ -179,6 +186,10 @@ func (r *Runner) DisplayHost() string {
 
 func (r *Runner) PrintSummary() {
 	printSummary(r.stats, r.opts.VerboseMode, r.DisplayHost(), r.port)
+}
+
+func (r *Runner) SentCount() int64 {
+	return r.stats.SentCount()
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -342,8 +353,6 @@ func (r *Runner) pingOnce(ctx context.Context, seq int) {
 	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", addr)
 	rtt := time.Since(start)
 
-	// Cancellation is handled at a higher layer (main). Do not print interruption messages here.
-	// But we must close an already-established connection to avoid leak.
 	if ctx.Err() != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -521,19 +530,16 @@ func setupFlags(opts *Options) {
 	flag.IntVar(&opts.Count, "n", 0, "")
 	flag.IntVar(&opts.Count, "count", 0, "")
 
-	// intervalMS is shared between -t and --interval so both aliases modify the same value.
 	intervalMS := flag.Int("t", 1000, "")
 	flag.IntVar(intervalMS, "interval", 1000, "")
 
-	// timeoutMS is shared between -w and --timeout so both aliases modify the same value.
 	timeoutMS := flag.Int("w", 1000, "")
 	flag.IntVar(timeoutMS, "timeout", 1000, "")
 
-	// DNS timeout is an advanced option; we only provide a long form.
 	dnsTimeoutMS := flag.Int("dns-timeout", 1500, "")
 
-	flag.IntVar(&opts.Port, "p", 0, "")
-	flag.IntVar(&opts.Port, "port", 0, "")
+	flag.IntVar(&opts.Port, "p", defaultPort, "")
+	flag.IntVar(&opts.Port, "port", defaultPort, "")
 
 	flag.BoolVar(&opts.ColorOutput, "c", false, "")
 	flag.BoolVar(&opts.ColorOutput, "color", false, "")
@@ -568,6 +574,10 @@ func applyDefaults(opts *Options) {
 	}
 }
 
+func isValidPort(n int) bool {
+	return n >= 1 && n <= 65535
+}
+
 func validateOptions(opts *Options) error {
 	if opts.UseIPv4 && opts.UseIPv6 {
 		return errors.New("无法同时使用 -4 和 -6 标志")
@@ -580,6 +590,9 @@ func validateOptions(opts *Options) error {
 	}
 	if opts.DNSTimeout <= 0 {
 		return errors.New("DNS 超时时间必须大于 0")
+	}
+	if !isValidPort(opts.Port) {
+		return errors.New("端口号必须是 1 到 65535 之间的整数")
 	}
 	return nil
 }
@@ -597,15 +610,11 @@ func parseTarget(opts *Options, args []string) (host string, port string, err er
 	}
 
 	if p == "" {
-		if opts.Port > 0 {
-			p = strconv.Itoa(opts.Port)
-		} else {
-			p = "80"
-		}
+		p = strconv.Itoa(opts.Port)
 	}
 
 	portNum, e := strconv.Atoi(p)
-	if e != nil || portNum <= 0 || portNum > 65535 {
+	if e != nil || !isValidPort(portNum) {
 		return "", "", errors.New("端口号必须是 1 到 65535 之间的整数")
 	}
 
@@ -788,9 +797,17 @@ func main() {
 		cancel()
 		runErr = <-done
 	case runErr = <-done:
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "错误: %v\n", runErr)
+		}
 	}
 
-	r.PrintSummary()
+	// Print summary only when it is meaningful:
+	// - normal completion
+	// - cancellation with at least one attempt sent
+	if runErr == nil || (errors.Is(runErr, context.Canceled) && r.SentCount() > 0) {
+		r.PrintSummary()
+	}
 
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
 		os.Exit(1)

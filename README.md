@@ -55,8 +55,8 @@
 
 | 操作系统 | 支持架构 |
 |----------|----------|
-| **Linux** | amd64, 386, arm64, arm, loong64 |
-| **Windows** | amd64, 386, arm64, arm |
+| **Linux** | amd64, arm64, loong64 |
+| **Windows** | amd64, 386, arm64 |
 | **macOS** | amd64, arm64 |
 
 
@@ -83,7 +83,7 @@ chmod +x /usr/local/bin/tcping
 ```bash
 tcping --version
 
-TCPing 版本 v1.8.0
+TCPing 版本 v1.9.0
 Copyright (c) 2026. All rights reserved.
 ```
 
@@ -477,7 +477,7 @@ TCPing 提供了全面的错误处理机制：
 ## 🛠️ 自行编译
 
 ### 环境要求
-- Go 1.24+ 
+- Go 1.25+ 
 - Git
 
 ### 快速编译
