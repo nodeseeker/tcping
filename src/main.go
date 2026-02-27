@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	version     = "v1.8.3"
+	version     = "v1.8.4"
 	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
 )
 
+// Statistics 保存 TCP ping 的统计数据，所有方法均通过内嵌的 Mutex 保证并发安全。
 type Statistics struct {
 	sync.Mutex
 	sentCount      int64
@@ -29,9 +30,9 @@ type Statistics struct {
 	minTime        float64
 	maxTime        float64
 	totalTime      float64
-	lastTime       float64 // 上一次的响应时间，用于计算抖动
-	totalJitter    float64 // 总抖动时间
-	jitterCount    int64   // 抖动样本数量
+	lastTime       float64
+	totalJitter    float64
+	jitterCount    int64
 }
 
 func (s *Statistics) update(elapsed float64, success bool) {
@@ -39,7 +40,6 @@ func (s *Statistics) update(elapsed float64, success bool) {
 	defer s.Unlock()
 
 	s.sentCount++
-
 	if !success {
 		return
 	}
@@ -47,7 +47,7 @@ func (s *Statistics) update(elapsed float64, success bool) {
 	s.respondedCount++
 	s.totalTime += elapsed
 
-	// 首次响应特殊处理
+	// 首次成功响应：初始化边界值，无抖动样本。
 	if s.respondedCount == 1 {
 		s.minTime = elapsed
 		s.maxTime = elapsed
@@ -55,18 +55,17 @@ func (s *Statistics) update(elapsed float64, success bool) {
 		return
 	}
 
-	// 计算抖动 (当前时间与上一次时间的差值的绝对值)
-	if s.respondedCount > 1 {
-		jitter := elapsed - s.lastTime
-		if jitter < 0 {
-			jitter = -jitter
-		}
-		s.totalJitter += jitter
-		s.jitterCount++
+	// 计算抖动（与上次响应时间差的绝对值）。
+	// FIX: 去掉冗余的 `respondedCount > 1` 判断，
+	// 此处执行时 respondedCount 必然 > 1（上方已 return）。
+	jitter := elapsed - s.lastTime
+	if jitter < 0 {
+		jitter = -jitter
 	}
+	s.totalJitter += jitter
+	s.jitterCount++
 	s.lastTime = elapsed
 
-	// 更新最小和最大时间
 	if elapsed < s.minTime {
 		s.minTime = elapsed
 	}
@@ -79,11 +78,9 @@ func (s *Statistics) getStats() (sent, responded int64, min, max, avg float64) {
 	s.Lock()
 	defer s.Unlock()
 
-	avg = 0.0
 	if s.respondedCount > 0 {
 		avg = s.totalTime / float64(s.respondedCount)
 	}
-
 	return s.sentCount, s.respondedCount, s.minTime, s.maxTime, avg
 }
 
@@ -97,11 +94,14 @@ func (s *Statistics) getJitter() float64 {
 	return 0.0
 }
 
+// Options 是纯数据结构（value bag），不封装任何行为。
+// FIX: 去除 sendCSVRow / CSVChan() / closeCSVChan 三个方法——
+// Options 不应承担行为，channel 的方向控制由函数签名负责。
 type Options struct {
 	UseIPv4     bool
 	UseIPv6     bool
 	Count       int
-	Interval    int // 请求间隔（毫秒）
+	Interval    int
 	Timeout     int
 	ColorOutput bool
 	VerboseMode bool
@@ -110,8 +110,10 @@ type Options struct {
 	Port        int
 	CSVPath     string
 	Host        string
-	CSVChan     chan []string
-	CSVAuto     bool
+	// CSVChan 由 main() 在启动前赋值一次，运行期间只读，
+	// 消除跨 goroutine 写字段的数据竞争。
+	CSVChan chan []string
+	CSVAuto bool
 }
 
 func handleError(err error, exitCode int) {
@@ -161,7 +163,6 @@ func printVersion() {
 }
 
 func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, error) {
-	// 尝试标准IP解析
 	if ip := net.ParseIP(address); ip != nil {
 		isV4 := ip.To4() != nil
 		if useIPv4 && !isV4 {
@@ -170,21 +171,16 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, er
 		if useIPv6 && isV4 {
 			return "", nil, fmt.Errorf("地址 %s 不是 IPv6 地址", address)
 		}
-		// 直接输入的IP地址，返回单个IP列表
-		var ipList []net.IP
-		ipList = append(ipList, ip)
 		if !isV4 {
-			return "[" + ip.String() + "]", ipList, nil
+			return "[" + ip.String() + "]", []net.IP{ip}, nil
 		}
-		return ip.String(), ipList, nil
+		return ip.String(), []net.IP{ip}, nil
 	}
 
-	// 最后尝试DNS解析
 	ipList, err := net.LookupIP(address)
 	if err != nil {
 		return "", nil, fmt.Errorf("解析 %s 失败: %v", address, err)
 	}
-
 	if len(ipList) == 0 {
 		return "", nil, fmt.Errorf("未找到 %s 的 IP 地址", address)
 	}
@@ -207,22 +203,19 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, er
 		return "", ipList, fmt.Errorf("未找到 %s 的 IPv6 地址", address)
 	}
 
-	// 如果没有强制指定IP版本，优先使用IPv4地址
-	// 首先查找IPv4地址
+	// 未强制指定版本：优先 IPv4，回退 IPv6。
 	for _, ip := range ipList {
 		if ip.To4() != nil {
 			return ip.String(), ipList, nil
 		}
 	}
-
-	// 如果没有找到IPv4地址，使用第一个IPv6地址
 	for _, ip := range ipList {
 		if ip.To4() == nil {
 			return "[" + ip.String() + "]", ipList, nil
 		}
 	}
 
-	// 理论上不应该到达这里，因为ipList不为空
+	// 理论上不可达，因为 ipList 非空。
 	ip := ipList[0]
 	if ip.To4() == nil {
 		return "[" + ip.String() + "]", ipList, nil
@@ -230,46 +223,48 @@ func resolveAddress(address string, useIPv4, useIPv6 bool) (string, []net.IP, er
 	return ip.String(), ipList, nil
 }
 
-// parseHostPort 解析 host:port 格式的地址
-func parseHostPort(input string) (host string, port string, hasPort bool) {
-	// 检查是否是 IPv6 地址格式 [host]:port
+func parseHostPort(input string) (host, port string, hasPort bool) {
 	if strings.HasPrefix(input, "[") {
 		if idx := strings.LastIndex(input, "]:"); idx != -1 {
 			return input[1:idx], input[idx+2:], true
 		}
-		// 纯 IPv6 地址 [host]
 		if strings.HasSuffix(input, "]") {
 			return input[1 : len(input)-1], "", false
 		}
 		return input, "", false
 	}
 
-	// 检查是否是 host:port 格式（非 IPv6）
-	if idx := strings.LastIndex(input, ":"); idx != -1 {
-		// 确保不是 IPv6 地址（IPv6 有多个冒号）
-		if strings.Count(input, ":") == 1 {
-			return input[:idx], input[idx+1:], true
-		}
+	if strings.Count(input, ":") == 1 {
+		idx := strings.LastIndex(input, ":")
+		return input[:idx], input[idx+1:], true
 	}
 
 	return input, "", false
 }
 
-func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string,
-	opts *Options) {
-	// 创建可取消的连接上下文，继承父上下文
+// sendCSVRow 非阻塞地向 CSV channel 投递一行数据。
+// FIX: 从 Options 方法改为独立函数，保持 Options 为纯数据结构。
+// channel 方向声明为 chan<- 明确写入语义。
+func sendCSVRow(ch chan<- []string, row []string) {
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- row:
+	default:
+	}
+}
+
+func pingOnce(ctx context.Context, address, port string, timeout int, stats *Statistics, seq int, ip string, opts *Options) {
 	dialCtx, dialCancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer dialCancel()
 
 	start := time.Now()
-	var d net.Dialer
-	conn, err := d.DialContext(dialCtx, "tcp", address+":"+port)
+	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", address+":"+port)
 	elapsed := float64(time.Since(start).Microseconds()) / 1000.0
 
-	// 检查是否因为主上下文取消而失败
 	if ctx.Err() == context.Canceled {
-		msg := "\n操作被中断, 连接尝试已中止\n"
-		fmt.Print(infoText(msg, opts.ColorOutput))
+		fmt.Print(infoText("\n操作被中断, 连接尝试已中止\n", opts.ColorOutput))
 		return
 	}
 
@@ -277,96 +272,54 @@ func pingOnce(ctx context.Context, address, port string, timeout int, stats *Sta
 	stats.update(elapsed, success)
 
 	if !success {
-		msg := fmt.Sprintf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", ip, port, seq, err)
-		fmt.Print(errorText(msg, opts.ColorOutput))
-
+		fmt.Print(errorText(fmt.Sprintf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", ip, port, seq, err), opts.ColorOutput))
 		if opts.VerboseMode {
 			fmt.Printf("  详细信息: 连接尝试耗时 %.2fms, 目标 %s:%s\n", elapsed, address, port)
 		}
-
-		// 写入 CSV（非阻塞）
-		if opts != nil && opts.CSVChan != nil {
-			timestamp := time.Now().UTC().Format(time.RFC3339Nano)
-			row := []string{
-				timestamp,
-				strconv.Itoa(seq),
-				opts.Host,
-				ip,
-				port,
-				fmt.Sprintf("%.2f", elapsed),
-				strconv.FormatBool(success),
-				fmt.Sprintf("%v", err),
-				"",
-			}
-			select {
-			case opts.CSVChan <- row:
-			default:
-			}
-		}
-
+		sendCSVRow(opts.CSVChan, []string{
+			time.Now().UTC().Format(time.RFC3339Nano),
+			strconv.Itoa(seq), opts.Host, ip, port,
+			fmt.Sprintf("%.2f", elapsed),
+			"false", fmt.Sprintf("%v", err), "",
+		})
 		return
 	}
 
-	// 获取本地地址并确保连接被关闭
-	localAddr := ""
-	if conn != nil {
-		localAddr = conn.LocalAddr().String()
-	}
+	// FIX: 删除原有的死变量 `localAddr := ""`，连接成功后直接获取一次。
+	localAddr := conn.LocalAddr().String()
 	defer func() {
-		if cerr := conn.Close(); cerr != nil {
-			if opts != nil && opts.VerboseMode {
-				fmt.Printf("  关闭连接时出错: %v\n", cerr)
-			}
+		if cerr := conn.Close(); cerr != nil && opts.VerboseMode {
+			fmt.Printf("  关闭连接时出错: %v\n", cerr)
 		}
 	}()
-	msg := fmt.Sprintf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", ip, port, seq, elapsed)
-	fmt.Print(successText(msg, opts.ColorOutput))
 
+	fmt.Print(successText(fmt.Sprintf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", ip, port, seq, elapsed), opts.ColorOutput))
 	if opts.VerboseMode {
-		localAddr := conn.LocalAddr().String()
 		fmt.Printf("  详细信息: 本地地址=%s, 远程地址=%s:%s\n", localAddr, ip, port)
 	}
-
-	// 写入 CSV（非阻塞）
-	if opts != nil && opts.CSVChan != nil {
-		timestamp := time.Now().UTC().Format(time.RFC3339Nano)
-		row := []string{
-			timestamp,
-			strconv.Itoa(seq),
-			opts.Host,
-			ip,
-			port,
-			fmt.Sprintf("%.2f", elapsed),
-			strconv.FormatBool(success),
-			"",
-			localAddr,
-		}
-		select {
-		case opts.CSVChan <- row:
-		default:
-		}
-	}
+	sendCSVRow(opts.CSVChan, []string{
+		time.Now().UTC().Format(time.RFC3339Nano),
+		strconv.Itoa(seq), opts.Host, ip, port,
+		fmt.Sprintf("%.2f", elapsed),
+		"true", "", localAddr,
+	})
 }
 
 func printTCPingStatistics(stats *Statistics, opts *Options, host, port string) {
 	sent, responded, min, max, avg := stats.getStats()
 
 	fmt.Printf("\n\n--- 目标 %s 端口 %s 的 TCP ping 统计 ---\n", host, port)
+	if sent == 0 {
+		return
+	}
 
-	if sent > 0 {
-		lossRate := float64(sent-responded) / float64(sent) * 100
-		fmt.Printf("已发送 = %d, 已接收 = %d, 丢失 = %d (%.1f%% 丢失)\n",
-			sent, responded, sent-responded, lossRate)
+	lossRate := float64(sent-responded) / float64(sent) * 100
+	fmt.Printf("已发送 = %d, 已接收 = %d, 丢失 = %d (%.1f%% 丢失)\n", sent, responded, sent-responded, lossRate)
 
-		if responded > 0 {
-			fmt.Printf("往返时间(RTT): 最小 = %.2fms, 最大 = %.2fms, 平均 = %.2fms\n",
-				min, max, avg)
-
-			// 在详细模式下显示抖动信息
-			if opts.VerboseMode {
-				jitter := stats.getJitter()
-				fmt.Printf("抖动(Jitter): 平均 = %.2fms\n", jitter)
-			}
+	if responded > 0 {
+		fmt.Printf("往返时间(RTT): 最小 = %.2fms, 最大 = %.2fms, 平均 = %.2fms\n", min, max, avg)
+		if opts.VerboseMode {
+			fmt.Printf("抖动(Jitter): 平均 = %.2fms\n", stats.getJitter())
 		}
 	}
 }
@@ -378,25 +331,13 @@ func colorText(text, colorCode string, useColor bool) string {
 	return "\033[" + colorCode + "m" + text + "\033[0m"
 }
 
-func successText(text string, useColor bool) string {
-	return colorText(text, "32", useColor) // 绿色
-}
-
-func errorText(text string, useColor bool) string {
-	return colorText(text, "31", useColor) // 红色
-}
-
-func infoText(text string, useColor bool) string {
-	return colorText(text, "36", useColor) // 青色
-}
+func successText(text string, useColor bool) string { return colorText(text, "32", useColor) }
+func errorText(text string, useColor bool) string   { return colorText(text, "31", useColor) }
+func infoText(text string, useColor bool) string    { return colorText(text, "36", useColor) }
 
 func setupFlags(opts *Options) {
-	// 自定义 Usage 函数，使用我们自己的帮助信息
-	flag.Usage = func() {
-		printHelp()
-	}
+	flag.Usage = func() { printHelp() }
 
-	// 定义命令行标志，同时设置短选项和长选项
 	flag.BoolVar(&opts.UseIPv4, "4", false, "")
 	flag.BoolVar(&opts.UseIPv4, "ipv4", false, "")
 	flag.BoolVar(&opts.UseIPv6, "6", false, "")
@@ -423,40 +364,32 @@ func setupFlags(opts *Options) {
 	flag.Parse()
 }
 
-// sanitizeFilename 将输入字符串中不安全或特殊的字符替换为下划线
 func sanitizeFilename(s string) string {
 	if s == "" {
 		return "unknown"
 	}
-	// 移除前后空格
 	s = strings.TrimSpace(s)
 	var b strings.Builder
 	for _, r := range s {
-		// 允许字母、数字、点、下划线和短横线
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
 			b.WriteRune(r)
 		} else {
 			b.WriteByte('_')
 		}
 	}
-	out := b.String()
-	if out == "" {
-		return "unknown"
+	if out := b.String(); out != "" {
+		return out
 	}
-	return out
+	return "unknown"
 }
 
-// 新增集中的参数验证函数
 func validateOptions(opts *Options, args []string) (string, string, error) {
-	// 手动解析 flag.Args() 中未被 flag 包解析的选项
-	// Go 的 flag 包在遇到非选项参数后会停止解析
 	optionsWithValue := map[string]*int{
 		"-n": &opts.Count, "--count": &opts.Count,
 		"-t": &opts.Interval, "--interval": &opts.Interval,
 		"-w": &opts.Timeout, "--timeout": &opts.Timeout,
 		"-p": &opts.Port, "--port": &opts.Port,
 	}
-
 	boolOptions := map[string]*bool{
 		"-4": &opts.UseIPv4, "--ipv4": &opts.UseIPv4,
 		"-6": &opts.UseIPv6, "--ipv6": &opts.UseIPv6,
@@ -470,112 +403,130 @@ func validateOptions(opts *Options, args []string) (string, string, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if ptr, ok := optionsWithValue[arg]; ok {
-			// 带值的选项
 			if i+1 < len(args) {
 				if val, err := strconv.Atoi(args[i+1]); err == nil {
 					*ptr = val
-					i++ // 跳过值
+					i++
 					continue
 				}
 			}
 		} else if ptr, ok := boolOptions[arg]; ok {
-			// 布尔选项
 			*ptr = true
-			continue
 		} else if !strings.HasPrefix(arg, "-") {
-			// 位置参数
 			positionalArgs = append(positionalArgs, arg)
-			continue
 		}
-		// 未知选项，跳过
 	}
 
-	// 验证基本选项
 	if opts.UseIPv4 && opts.UseIPv6 {
 		return "", "", errors.New("无法同时使用 -4 和 -6 标志")
 	}
-
 	if opts.Interval < 0 {
 		return "", "", errors.New("间隔时间不能为负值")
 	}
-
 	if opts.Timeout <= 0 {
 		return "", "", errors.New("超时时间必须大于 0")
 	}
-
-	// 验证主机参数
 	if len(positionalArgs) < 1 {
 		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
 	}
 
-	hostInput := positionalArgs[0]
-	port := "80" // 默认端口为 80
-
-	// 解析 host:port 格式
-	host, parsedPort, hasPort := parseHostPort(hostInput)
+	host, parsedPort, hasPort := parseHostPort(positionalArgs[0])
+	port := "80"
 	if hasPort {
 		port = parsedPort
 	}
-
-	// 优先级：命令行直接指定的端口 > host:port格式 > -p参数指定的端口 > 默认端口80
 	if len(positionalArgs) > 1 {
 		port = positionalArgs[1]
 	} else if !hasPort && opts.Port > 0 {
-		// 如果通过-p参数指定了端口且命令行没有直接指定端口，则使用-p参数的值
 		port = strconv.Itoa(opts.Port)
 	}
 
-	// 验证端口
-	if portNum, err := strconv.Atoi(port); err != nil {
-		return "", "", fmt.Errorf("端口号格式无效")
-	} else if portNum <= 0 || portNum > 65535 {
-		return "", "", fmt.Errorf("端口号必须在 1 到 65535 之间")
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return "", "", errors.New("端口号格式无效")
+	}
+	if portNum <= 0 || portNum > 65535 {
+		return "", "", errors.New("端口号必须在 1 到 65535 之间")
 	}
 
 	return host, port, nil
 }
 
-func main() {
-	// 创建选项结构
-	opts := &Options{}
+// startCSVWriter 初始化 CSV channel 并启动写入 goroutine。
+// FIX: 不再返回 *sync.WaitGroup（返回局部变量指针是反模式）；
+// 改为接受调用方传入的 *sync.WaitGroup，所有权归调用方，语义清晰。
+// 写入 goroutine 接受 <-chan []string 只读参数，不持有 opts 指针，
+// 彻底消除跨 goroutine 修改共享字段的可能。
+func startCSVWriter(path string, wg *sync.WaitGroup) chan []string {
+	ch := make(chan []string, 200)
+	wg.Add(1)
+	go func(ch <-chan []string) {
+		defer wg.Done()
 
-	// 设置和解析命令行参数
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "无法打开 CSV 文件 %s: %v\n", path, err)
+			for range ch { // 排空 channel，避免发送方在满缓冲时受影响
+			}
+			return
+		}
+		defer func() {
+			_ = f.Sync()
+			if cerr := f.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "关闭 CSV 文件失败: %v\n", cerr)
+			}
+		}()
+
+		w := csv.NewWriter(f)
+		if fi, err := f.Stat(); err == nil && fi.Size() == 0 {
+			_ = w.Write([]string{"timestamp", "seq", "host", "ip", "port", "elapsed_ms", "success", "error", "local_addr"})
+			w.Flush()
+		}
+
+		replacer := strings.NewReplacer("\n", " ", "\r", " ")
+		for row := range ch {
+			for i, v := range row {
+				row[i] = replacer.Replace(v)
+			}
+			if err := w.Write(row); err != nil {
+				fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
+				continue
+			}
+			w.Flush()
+			if err := w.Error(); err != nil {
+				fmt.Fprintf(os.Stderr, "CSV flush 错误: %v\n", err)
+			}
+		}
+		w.Flush()
+		if err := w.Error(); err != nil {
+			fmt.Fprintf(os.Stderr, "CSV 最终 flush 错误: %v\n", err)
+		}
+	}(ch)
+
+	return ch
+}
+
+func main() {
+	opts := &Options{}
 	setupFlags(opts)
 
-	// 处理帮助和版本信息选项，这些选项优先级最高
 	if opts.ShowHelp {
 		printHelp()
 		os.Exit(0)
 	}
-
 	if opts.ShowVersion {
 		printVersion()
 		os.Exit(0)
 	}
 
-	// 集中验证所有参数
 	host, port, err := validateOptions(opts, flag.Args())
-	if err != nil {
-		handleError(err, 1)
-	}
+	handleError(err, 1)
 
-	// 确定使用IPv4还是IPv6
-	useIPv4 := opts.UseIPv4
-	useIPv6 := opts.UseIPv6
+	opts.Host = host
 
-	// 保存原始主机名用于显示
-	originalHost := host
+	address, allIPs, err := resolveAddress(host, opts.UseIPv4, opts.UseIPv6)
+	handleError(err, 1)
 
-	// 设置 opts.Host 以便后续 CSV 使用
-	opts.Host = originalHost
-
-	// 解析IP地址
-	address, allIPs, err := resolveAddress(host, useIPv4, useIPv6)
-	if err != nil {
-		handleError(err, 1)
-	}
-
-	// 提取IP地址用于显示
 	ipType := "IPv4"
 	ipAddress := address
 	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
@@ -583,17 +534,14 @@ func main() {
 		ipAddress = address[1 : len(address)-1]
 	}
 
-	// 仅当用户输入的是域名时，显示额外的 [IP类型 - IP] 信息；
-	// 如果用户输入的是 IP，则不显示该方括号部分。
-	if net.ParseIP(originalHost) == nil {
-		fmt.Printf("正在对 %s [%s - %s] 端口 %s 执行 TCP Ping\n", originalHost, ipType, ipAddress, port)
+	if net.ParseIP(host) == nil {
+		fmt.Printf("正在对 %s [%s - %s] 端口 %s 执行 TCP Ping\n", host, ipType, ipAddress, port)
 	} else {
-		fmt.Printf("正在对 %s 端口 %s 执行 TCP Ping\n", originalHost, port)
+		fmt.Printf("正在对 %s 端口 %s 执行 TCP Ping\n", host, port)
 	}
 
-	// 在详细模式下显示所有解析到的IP地址
 	if opts.VerboseMode && len(allIPs) > 1 {
-		fmt.Printf("域名 %s 解析到的所有IP地址:\n", originalHost)
+		fmt.Printf("域名 %s 解析到的所有IP地址:\n", host)
 		for i, ip := range allIPs {
 			if ip.To4() != nil {
 				fmt.Printf("  [%d] IPv4: %s\n", i+1, ip.String())
@@ -603,96 +551,39 @@ func main() {
 		}
 		fmt.Printf("使用IP地址: %s\n\n", ipAddress)
 	}
-	stats := &Statistics{}
-	// 保存原始 host 到 opts，供 CSV 使用
-	opts.Host = originalHost
 
+	// FIX: WaitGroup 由 main() 持有并传入 startCSVWriter，所有权语义清晰。
+	var csvWg sync.WaitGroup
+	if opts.CSVAuto {
+		opts.CSVPath = fmt.Sprintf("tcping_results_%s_%s.csv",
+			sanitizeFilename(opts.Host), time.Now().Format("20060102-150405"))
+		opts.CSVChan = startCSVWriter(opts.CSVPath, &csvWg)
+	}
+
+	stats := &Statistics{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 创建信号捕获通道
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
-	// 使用 WaitGroup 来确保后台 goroutine 正确退出
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	// 仅在用户通过 -o/--csv 指定时，自动在当前目录生成文件名
-	if opts.CSVAuto {
-		opts.CSVPath = fmt.Sprintf("tcping_results_%s_%s.csv", sanitizeFilename(opts.Host), time.Now().Format("20060102-150405"))
-	}
-
-	// 如果启用了 CSV 自动输出，启动写入 goroutine
-	var csvWg sync.WaitGroup
-	if opts.CSVAuto {
-		opts.CSVChan = make(chan []string, 200)
-		csvWg.Add(1)
-		go func(path string, ch chan []string) {
-			defer csvWg.Done()
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "无法打开 CSV 文件 %s: %v\n", path, err)
-				// 取消 CSV 通道，避免后续写入阻塞
-				opts.CSVChan = nil
-				return
-			}
-			defer f.Close()
-
-			writer := csv.NewWriter(f)
-			// 如果文件为空，写 header
-			if fi, err := f.Stat(); err == nil && fi.Size() == 0 {
-				header := []string{"timestamp", "seq", "host", "ip", "port", "elapsed_ms", "success", "error", "local_addr"}
-				if err := writer.Write(header); err != nil {
-					fmt.Fprintf(os.Stderr, "写入 CSV header 失败: %v\n", err)
-				}
-				writer.Flush()
-			}
-
-			for row := range ch {
-				// 清理字段中的换行符，避免破坏 CSV 行结构
-				for i := range row {
-					row[i] = strings.ReplaceAll(row[i], "\n", " ")
-					row[i] = strings.ReplaceAll(row[i], "\r", " ")
-				}
-				if err := writer.Write(row); err != nil {
-					fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
-					continue
-				}
-				writer.Flush()
-				if err := writer.Error(); err != nil {
-					fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
-				}
-			}
-			writer.Flush()
-			if err := writer.Error(); err != nil {
-				fmt.Fprintf(os.Stderr, "CSV 写入错误: %v\n", err)
-			}
-			_ = f.Sync()
-		}(opts.CSVPath, opts.CSVChan)
-	}
-
-	// 启动ping协程
+	var pingWg sync.WaitGroup
+	pingWg.Add(1)
 	go func() {
-		defer wg.Done()
-
+		defer pingWg.Done()
 		for i := 0; opts.Count == 0 || i < opts.Count; i++ {
-			// 检查上下文是否已取消
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
 
-			// 执行ping
 			pingOnce(ctx, address, port, opts.Timeout, stats, i, ipAddress, opts)
 
-			// 检查是否完成所有请求
 			if opts.Count != 0 && i == opts.Count-1 {
 				break
 			}
 
-			// 等待下一次ping的间隔
 			select {
 			case <-ctx.Done():
 				return
@@ -701,10 +592,9 @@ func main() {
 		}
 	}()
 
-	// 等待中断信号或完成
 	done := make(chan struct{})
 	go func() {
-		wg.Wait()
+		pingWg.Wait()
 		close(done)
 	}()
 
@@ -713,23 +603,19 @@ func main() {
 		fmt.Printf("\n操作被中断。\n")
 		cancel()
 	case <-done:
-		// 正常完成
-	}
-	// 确保 ping goroutine 已结束，再关闭 CSV 通道并等待写入完成
-	wg.Wait()
-	if opts.CSVChan != nil {
-		close(opts.CSVChan)
-		// 等待 CSV 写入 goroutine 完成
-		// csvWg 在 main 作用域
-		csvWg.Wait()
-	}
-	// 根据输入判断显示格式：
-	// - 如果用户输入的是域名，则显示 "域名 (IP)"
-	// - 如果用户输入的是 IP，则只显示 IP
-	displayHost := ipAddress
-	if net.ParseIP(originalHost) == nil {
-		displayHost = fmt.Sprintf("%s [%s]", originalHost, ipAddress)
 	}
 
+	pingWg.Wait()
+
+	// 所有 ping 结束后关闭 channel，等待 CSV 写入 goroutine 排空队列。
+	if opts.CSVChan != nil {
+		close(opts.CSVChan)
+		csvWg.Wait()
+	}
+
+	displayHost := ipAddress
+	if net.ParseIP(host) == nil {
+		displayHost = fmt.Sprintf("%s [%s]", host, ipAddress)
+	}
 	printTCPingStatistics(stats, opts, displayHost, port)
 }
