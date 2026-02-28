@@ -602,11 +602,13 @@ func parseTarget(opts *Options, args []string) (host string, port string, err er
 		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
 	}
 
-	rawHost := args[0]
+	rawHost := strings.TrimSpace(args[0])
 	h, p := splitHostMaybeWithPort(rawHost)
 
 	if len(args) >= 2 {
-		p = args[1]
+		// allow passing ":1234" or "1234" as the second argument; trim whitespace
+		p = strings.TrimSpace(args[1])
+		p = strings.TrimPrefix(p, ":")
 	}
 
 	if p == "" {
