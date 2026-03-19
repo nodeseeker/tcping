@@ -1,5 +1,8 @@
 name: Build and Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +19,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read Go version from go.mod
         id: get_go_version
@@ -29,9 +32,11 @@ jobs:
           echo "version=$ver" >> $GITHUB_OUTPUT
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ steps.get_go_version.outputs.version }}
+          cache: true
+          cache-dependency-path: go.mod
 
       - name: Ensure module dependencies
         if: always()
@@ -91,7 +96,7 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: tcping-binaries
           path: bin/*
