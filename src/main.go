@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	version     = "v1.9.4"
+	version     = "v1.9.5"
 	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
 
@@ -32,17 +32,18 @@ const (
 // =====================
 
 type Options struct {
-	UseIPv4     bool
-	UseIPv6     bool
-	Count       int           // 0 = infinite
-	Interval    time.Duration // ping interval
-	Timeout     time.Duration // dial timeout
-	DNSTimeout  time.Duration // dns lookup timeout
-	ColorOutput bool
-	VerboseMode bool
-	ShowVersion bool
-	ShowHelp    bool
-	Port        int // default is set by flags (80). Must be 1..65535.
+	UseIPv4       bool
+	UseIPv6       bool
+	Count         int           // 0 = infinite
+	Interval      time.Duration // ping interval
+	Timeout       time.Duration // dial timeout
+	DNSTimeout    time.Duration // dns lookup timeout
+	ColorOutput   bool
+	VerboseMode   bool
+	ShowTimestamp bool
+	ShowVersion   bool
+	ShowHelp      bool
+	Port          int // default is set by flags (80). Must be 1..65535.
 
 	CSVAuto       bool
 	CSVPath       string
@@ -364,11 +365,15 @@ func (r *Runner) pingOnce(ctx context.Context, seq int) {
 	r.stats.Update(rtt, success)
 
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
+	prefix := ""
+	if r.opts.ShowTimestamp {
+		prefix = "[" + formatDisplayTimestamp(time.Now()) + "] "
+	}
 
 	if !success {
-		fmt.Print(errorText(fmt.Sprintf("TCP连接失败 %s:%s: seq=%d 错误=%v\n", r.chosenIP, r.port, seq, err), r.opts.ColorOutput))
+		fmt.Print(errorText(fmt.Sprintf("%sTCP连接失败 %s:%s: seq=%d 错误=%v\n", prefix, r.chosenIP, r.port, seq, err), r.opts.ColorOutput))
 		if r.opts.VerboseMode {
-			fmt.Printf("  详细信息: 连接尝试耗时 %.2fms, 目标 %s\n", durMS(rtt), addr)
+			fmt.Printf("%s  详细信息: 连接尝试耗时 %.2fms, 目标 %s\n", prefix, durMS(rtt), addr)
 		}
 		sendCSVRow(r.csv, []string{
 			ts,
@@ -391,9 +396,9 @@ func (r *Runner) pingOnce(ctx context.Context, seq int) {
 
 	localAddr := conn.LocalAddr().String()
 
-	fmt.Print(successText(fmt.Sprintf("从 %s:%s 收到响应: seq=%d time=%.2fms\n", r.chosenIP, r.port, seq, durMS(rtt)), r.opts.ColorOutput))
+	fmt.Print(successText(fmt.Sprintf("%s从 %s:%s 收到响应: seq=%d time=%.2fms\n", prefix, r.chosenIP, r.port, seq, durMS(rtt)), r.opts.ColorOutput))
 	if r.opts.VerboseMode {
-		fmt.Printf("  详细信息: 本地地址=%s, 远程地址=%s\n", localAddr, addr)
+		fmt.Printf("%s  详细信息: 本地地址=%s, 远程地址=%s\n", prefix, localAddr, addr)
 	}
 
 	sendCSVRow(r.csv, []string{
@@ -547,6 +552,9 @@ func setupFlags(opts *Options) {
 	flag.BoolVar(&opts.VerboseMode, "v", false, "")
 	flag.BoolVar(&opts.VerboseMode, "verbose", false, "")
 
+	flag.BoolVar(&opts.ShowTimestamp, "D", false, "")
+	flag.BoolVar(&opts.ShowTimestamp, "timestamp", false, "")
+
 	flag.BoolVar(&opts.CSVAuto, "o", false, "")
 	flag.BoolVar(&opts.CSVAuto, "csv", false, "")
 	flag.IntVar(&opts.CSVFlushEvery, "csv-flush-every", defaultCSVFlushEvery, "")
@@ -672,6 +680,7 @@ func printHelp() {
         --dns-timeout <毫秒>    DNS 解析超时 (默认: 1500)
     -c, --color                 启用彩色输出
     -v, --verbose               启用详细模式
+	-D, --timestamp             显示时间戳 (yyyy-mm-dd hh:mm:ss)
     -o, --csv                   在当前目录生成 CSV 文件记录
         --csv-flush-every <N>   每 N 行 flush 一次 (默认: 50)
         --csv-flush-tick <毫秒> 定时 flush (默认: 1000)
@@ -749,6 +758,11 @@ func sanitizeFilename(s string) string {
 
 func durMS(d time.Duration) float64 {
 	return float64(d.Microseconds()) / 1000.0
+}
+
+func formatDisplayTimestamp(t time.Time) string {
+	// Format required: yyyy-mm-dd hh:mm:ss
+	return t.Format("2006-01-02 15:04:05")
 }
 
 // =====================

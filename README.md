@@ -141,6 +141,7 @@ tcping [选项] <主机> [端口]
 | `-w` | `--timeout` | 连接超时时间（毫秒） | 1000ms |
 | `-c` | `--color` | 启用彩色输出 | 关闭 |
 | `-v` | `--verbose` | 启用详细模式（包含抖动统计） | 关闭 |
+| `-D` | `--timestamp` | 在每条结果前显示时间戳（yyyy-mm-dd hh:mm:ss） | 关闭 |
 | `-V` | `--version` | 显示版本信息 | - |
 | `-h` | `--help` | 显示帮助信息 | - |
 | `-o` | `--csv` | 在当前目录生成csv文件记录 | 关闭 |
@@ -231,6 +232,18 @@ $ tcping -c -v github.com 443
 抖动(Jitter): 平均 = 1.67ms
 ```
 
+#### 显示时间戳
+```bash
+$ tcping -D -n 2 example.com 443
+正在对 example.com [IPv4 - 93.184.216.34] 端口 443 执行 TCP Ping
+[2026-03-19 14:59:06] 从 93.184.216.34:443 收到响应: seq=1 time=41.52ms
+[2026-03-19 14:59:07] 从 93.184.216.34:443 收到响应: seq=2 time=40.86ms
+
+--- 目标 example.com [93.184.216.34] 端口 443 的 TCP ping 统计 ---
+已发送 = 2, 已接收 = 2, 丢失 = 0 (0.0% 丢失)
+往返时间(RTT): 最小 = 40.86ms, 最大 = 41.52ms, 平均 = 41.19ms
+```
+
 #### 网络质量分析
 ```bash
 $ tcping -v -n 10 -c unstable-server.com 80
@@ -309,6 +322,7 @@ CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_ad
 | 网络质量分析 | `tcping -v -n 20 target.com 443` | 详细统计含抖动分析 |
 | 多IP域名测试 | `tcping -v cdn.example.com 80` | 查看域名所有IP并测试首个IP |
 | CSV记录 | `tcping -o example.com` | 将结果保存为CSV文件 |
+| 结果带时间戳 | `tcping -D example.com 443` | 每条结果显示时间戳，便于对时排障 |
 
 
 
