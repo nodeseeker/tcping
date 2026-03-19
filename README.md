@@ -139,6 +139,8 @@ tcping [选项] <主机> [端口]
 | `-p` | `--port` | 指定要连接的端口 | 80 |
 | `-t` | `--interval` | 请求之间的间隔（毫秒） | 1000ms |
 | `-w` | `--timeout` | 连接超时时间（毫秒） | 1000ms |
+|  | `--dns-timeout` | DNS 解析超时时间（毫秒） | 1500ms |
+|  | `--dns-server` | 指定 DNS 服务器（如 1.1.1.1 或 8.8.8.8:53） | 系统默认 |
 | `-c` | `--color` | 启用彩色输出 | 关闭 |
 | `-v` | `--verbose` | 启用详细模式（包含抖动统计） | 关闭 |
 | `-D` | `--timestamp` | 在每条结果前显示时间戳（yyyy-mm-dd hh:mm:ss） | 关闭 |
@@ -178,6 +180,12 @@ $ tcping google.com:443
 ```
 
 ### 🎯 高级用法
+
+#### 使用指定 DNS 服务器解析域名
+```bash
+$ tcping --dns-server 1.1.1.1 github.com 443
+$ tcping --dns-server 8.8.8.8:53 example.com
+```
 
 #### 限制测试次数和间隔
 ```bash

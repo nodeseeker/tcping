@@ -38,6 +38,7 @@ type Options struct {
 	Interval      time.Duration // ping interval
 	Timeout       time.Duration // dial timeout
 	DNSTimeout    time.Duration // dns lookup timeout
+	DNSServer     string        // optional DNS server, supports ip or ip:port
 	ColorOutput   bool
 	VerboseMode   bool
 	ShowTimestamp bool
@@ -277,8 +278,28 @@ func (r *Runner) resolve(ctx context.Context) error {
 	defer cancel()
 
 	res := net.Resolver{}
+	dnsServerAddr := ""
+	if strings.TrimSpace(r.opts.DNSServer) != "" {
+		var err error
+		dnsServerAddr, err = normalizeDNSServer(r.opts.DNSServer)
+		if err != nil {
+			return fmt.Errorf("DNS 服务器地址无效: %w", err)
+		}
+
+		dialer := &net.Dialer{Timeout: r.opts.DNSTimeout}
+		res = net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, network, dnsServerAddr)
+			},
+		}
+	}
+
 	ipAddrs, err := res.LookupIPAddr(dnsCtx, r.host)
 	if err != nil {
+		if dnsServerAddr != "" {
+			return fmt.Errorf("通过 DNS 服务器 %s 解析 %s 失败: %w", dnsServerAddr, r.host, err)
+		}
 		return fmt.Errorf("解析 %s 失败: %w", r.host, err)
 	}
 	if len(ipAddrs) == 0 {
@@ -542,6 +563,7 @@ func setupFlags(opts *Options) {
 	flag.IntVar(timeoutMS, "timeout", 1000, "")
 
 	dnsTimeoutMS := flag.Int("dns-timeout", 1500, "")
+	flag.StringVar(&opts.DNSServer, "dns-server", "", "")
 
 	flag.IntVar(&opts.Port, "p", defaultPort, "")
 	flag.IntVar(&opts.Port, "port", defaultPort, "")
@@ -599,10 +621,42 @@ func validateOptions(opts *Options) error {
 	if opts.DNSTimeout <= 0 {
 		return errors.New("DNS 超时时间必须大于 0")
 	}
+	if strings.TrimSpace(opts.DNSServer) != "" {
+		if _, err := normalizeDNSServer(opts.DNSServer); err != nil {
+			return fmt.Errorf("DNS 服务器地址无效: %w", err)
+		}
+	}
 	if !isValidPort(opts.Port) {
 		return errors.New("端口号必须是 1 到 65535 之间的整数")
 	}
 	return nil
+}
+
+func normalizeDNSServer(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+
+	host, port := splitHostMaybeWithPort(raw)
+	if host == "" {
+		host = raw
+	}
+
+	if net.ParseIP(host) == nil {
+		return "", fmt.Errorf("DNS 主机必须是 IP 地址: %s", host)
+	}
+
+	if port == "" {
+		port = "53"
+	}
+
+	portNum, err := strconv.Atoi(port)
+	if err != nil || !isValidPort(portNum) {
+		return "", errors.New("DNS 端口号必须是 1 到 65535 之间的整数")
+	}
+
+	return net.JoinHostPort(host, port), nil
 }
 
 func parseTarget(opts *Options, args []string) (host string, port string, err error) {
@@ -678,6 +732,7 @@ func printHelp() {
     -t, --interval <毫秒>       请求间隔 (默认: 1000)
     -w, --timeout <毫秒>        连接超时 (默认: 1000)
         --dns-timeout <毫秒>    DNS 解析超时 (默认: 1500)
+	    --dns-server <地址>     指定 DNS 服务器 (如: 8.8.8.8 或 8.8.8.8:53)
     -c, --color                 启用彩色输出
     -v, --verbose               启用详细模式
 	-D, --timestamp             显示时间戳 (yyyy-mm-dd hh:mm:ss)
@@ -694,6 +749,7 @@ func printHelp() {
     tcping -p 443 google.com
     tcping -4 -n 5 8.8.8.8 443
     tcping -w 2000 example.com 22
+	tcping --dns-server 1.1.1.1 github.com 443
     tcping -c -v example.com 443
 
 `, programName, version, programName)
