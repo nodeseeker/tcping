@@ -101,15 +101,17 @@ jobs:
           name: tcping-binaries
           path: bin/*
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            bin/*.zip
-            bin/SHA256SUMS.txt
+      - name: Create or update Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, uploading assets..."
+            gh release upload "$TAG" bin/*.zip bin/SHA256SUMS.txt --clobber
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" bin/*.zip bin/SHA256SUMS.txt \
+              --title "Release $TAG" \
+              --notes "Automated release for $TAG"
+          fi
