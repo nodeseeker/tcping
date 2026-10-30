@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# tcping 安装/更新/卸载脚本 (国内版本)
+# tcping 安装/更新/卸载脚本 (CNB 直连版)
 # 用于自动安装、更新或卸载 tcping 工具
 # 支持架构：amd64, arm64, 386, arm, loong64
-# 国内版本：优先使用国内镜像源，提高下载速度
+# CNB 直连：仓库为公开仓库，无需 token，全程直连 cnb.cool
 #
 # 使用方法：
-#   sudo ./install_cn.sh              # 安装或更新 tcping
-#   sudo ./install_cn.sh -u           # 卸载 tcping
-#   sudo ./install_cn.sh -f           # 强制安装（跳过确认）
-#   sudo ./install_cn.sh -v           # 详细输出
+#   sudo ./install_cnb.sh             # 安装或更新 tcping
+#   sudo ./install_cnb.sh -u          # 卸载 tcping
+#   sudo ./install_cnb.sh -f          # 强制安装（跳过确认）
+#   sudo ./install_cnb.sh -v          # 详细输出
 #
 
 set -euo pipefail  # 严格模式：遇到错误立即退出，未定义变量报错，管道错误传播
@@ -26,23 +26,19 @@ readonly NC='\033[0m' # No Color
 # 基本配置
 readonly INSTALL_DIR="/usr/local/bin"
 readonly TCPING_BIN="tcping"
-readonly GITHUB_API="https://api.github.com/repos/2959916298/tcping"
-readonly GITHUB_REPO="2959916298/tcping"
+readonly CNB_REPO_SLUG="l1094/tcping"
+# 页面 302 重定向入口（匿名可访问，用于探测最新 tag）
+readonly CNB_LATEST_URL="https://cnb.cool/${CNB_REPO_SLUG}/-/releases/latest"
+# 附件直链（必须用具体 tag，CNB 不支持 latest 下载路径）
+readonly CNB_DL_BASE="https://cnb.cool/${CNB_REPO_SLUG}/-/releases/download"
 readonly TEMP_DIR="/tmp/tcping_install"
-
-# 国内镜像源配置（按优先级排序，精简到4个）
-readonly MIRROR_SOURCES=(
-    "https://efp.lxmz.fun/https://github.com"
-    "https://g1.q66.de5.net/https://github.com"
-    "https://efp.q66.de5.net/https://github.com"
-    "https://ghfast.top/https://github.com"
-)
 
 # 全局变量
 VERBOSE=false
 FORCE=false
 UNINSTALL=false
 CURRENT_VERSION=""
+LATEST_TAG=""
 LATEST_VERSION=""
 
 # 打印函数
@@ -87,10 +83,10 @@ TCPing 安装脚本 (国内版本)
 
 支持的架构: amd64, arm64, 386, arm, loong64
 
-国内版本特性:
-    - 优先使用国内镜像源 (gh-proxy.com, ghfast.top)
-    - 自动回退到 GitHub 原始地址
-    - 提高下载速度和成功率
+CNB 直连版特性:
+    - 全程直连 cnb.cool，无需 token（仓库为公开仓库）
+    - 通过 /-/releases/latest 页面 302 重定向探测最新 tag
+    - 附件下载使用具体 tag 直链（CNB 不支持 latest 下载路径）
 
 示例:
     sudo $0             # 安装或更新 tcping
@@ -219,21 +215,25 @@ get_current_version() {
 }
 
 # 获取最新版本
+# CNB 的 api.cnb.cool 需要登录（匿名 401），但 /-/releases/latest 页面会 302
+# 跳转到最新 Release 的具体 tag 页面，利用重定向 URL 匿名拿到最新 tag。
 get_latest_version() {
     print_verbose "正在获取最新版本信息..."
     
-    local api_response
-    api_response=$(curl -sm 5 "$GITHUB_API/releases/latest" 2>/dev/null || echo "")
+    local redirect
+    redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$CNB_LATEST_URL" 2>/dev/null || echo "")
+    LATEST_TAG=$(echo "$redirect" | sed -n 's#.*/releases/tag/##p')
     
-    if [[ -n "$api_response" ]]; then
-        LATEST_VERSION=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
+    if [[ -z "$LATEST_TAG" ]]; then
+        print_warning "无法获取最新版本信息，使用默认版本 v1.9.10"
+        LATEST_TAG="v1.9.10"
     fi
     
-    if [[ -z "$LATEST_VERSION" ]]; then
-        print_warning "无法获取最新版本信息，使用默认版本 v1.9.9"
-        LATEST_VERSION="v1.9.9"
-    fi
+    # LATEST_TAG 形如 v1.9.10-20261030-205159；版本比较只取 semver 部分，
+    # 否则 sort -V 永远认为带时间戳的 tag 更新，导致每次都提示更新
+    LATEST_VERSION=$(echo "$LATEST_TAG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     
+    print_verbose "最新 tag: $LATEST_TAG"
     print_verbose "最新版本: $LATEST_VERSION"
 }
 
@@ -289,7 +289,7 @@ install_tcping() {
     arch=$(get_arch)
     
     print_info "正在为 $arch 架构下载 tcping $LATEST_VERSION..."
-    print_info "使用国内镜像源加速下载..."
+    print_info "下载源: CNB 直连 (cnb.cool)"
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
@@ -298,31 +298,17 @@ install_tcping() {
     # 构造文件名
     local filename="tcping-linux-$arch"
     local output_file="tcping.zip"
-    local download_success=false
     
-    # 尝试从各个镜像源下载
-    for mirror in "${MIRROR_SOURCES[@]}"; do
-        local download_url="$mirror/$GITHUB_REPO/releases/download/$LATEST_VERSION/${filename}.zip"
-        
-        print_info "正在尝试镜像源: $(echo "$mirror" | cut -d'/' -f3)"
-        
-        if try_download "$download_url" "$output_file"; then
-            download_success=true
-            print_success "下载成功！使用的镜像源: $(echo "$mirror" | cut -d'/' -f3)"
-            break
-        else
-            print_warning "镜像源 $(echo "$mirror" | cut -d'/' -f3) 下载失败，尝试下一个源..."
-        fi
-        
-        # 等待一秒再尝试下一个源
-        sleep 1
-    done
+    # 附件直链必须使用具体 tag（CNB 不支持 latest 下载路径）
+    local download_url="$CNB_DL_BASE/$LATEST_TAG/${filename}.zip"
     
-    if [[ "$download_success" != true ]]; then
-        print_error "所有镜像源下载均失败"
+    print_verbose "下载 URL: $download_url"
+    
+    if ! try_download "$download_url" "$output_file"; then
+        print_error "下载失败"
         print_info "可能的原因："
         print_info "1. 网络连接问题"
-        print_info "2. 版本 $LATEST_VERSION 不存在"
+        print_info "2. 版本 $LATEST_TAG 不存在"
         print_info "3. 架构 $arch 不受支持"
         cleanup
         exit 1
@@ -431,7 +417,7 @@ main() {
     done
     
     # 显示标题
-    print_title "TCPing 安装脚本 (国内版本)"
+    print_title "TCPing 安装脚本 (CNB 直连版)"
     echo
     
     # 检查权限

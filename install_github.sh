@@ -34,6 +34,7 @@ VERBOSE=false
 FORCE=false
 UNINSTALL=false
 CURRENT_VERSION=""
+LATEST_TAG=""
 LATEST_VERSION=""
 
 # 打印函数
@@ -212,14 +213,19 @@ get_latest_version() {
     api_response=$(curl -s "$GITHUB_API/releases/latest" 2>/dev/null || echo "")
     
     if [[ -n "$api_response" ]]; then
-        LATEST_VERSION=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
+        LATEST_TAG=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
     fi
     
-    if [[ -z "$LATEST_VERSION" ]]; then
+    if [[ -z "$LATEST_TAG" ]]; then
         print_warning "无法获取最新版本信息，使用默认版本 v1.9.9"
-        LATEST_VERSION="v1.9.9"
+        LATEST_TAG="v1.9.9"
     fi
     
+    # LATEST_TAG 可能带时间戳后缀（如 v1.9.10-20261030-205159）；
+    # 版本比较只取 semver 部分，否则 sort -V 永远判带时间戳的更新，每次都提示更新
+    LATEST_VERSION=$(echo "$LATEST_TAG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    
+    print_verbose "最新 tag: $LATEST_TAG"
     print_verbose "最新版本: $LATEST_VERSION"
 }
 
@@ -254,8 +260,9 @@ install_tcping() {
     mkdir -p "$TEMP_DIR"
     cd "$TEMP_DIR"
     
-    # 构造下载 URL - 匹配实际的文件命名格式
-    local download_url="$GITHUB_REPO/releases/download/$LATEST_VERSION/tcping-linux-$arch.zip"
+    # 构造下载 URL - GitHub 支持 releases/latest/download 直链，
+    # 与 tag 无关（时间戳 tag 也兼容），无需依赖 API 获取的版本号
+    local download_url="$GITHUB_REPO/releases/latest/download/tcping-linux-$arch.zip"
     
     print_verbose "下载 URL: $download_url"
     

@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-blue.svg)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-v1.9.9-green.svg)](https://github.com/2959916298/tcping/releases)
+[![Version](https://img.shields.io/badge/Version-v1.9.10-green.svg)](https://github.com/2959916298/tcping/releases)
 
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
@@ -11,7 +11,7 @@
 > 本仓库（`2959916298/tcping`）在 upstream 基础上做了以下改动：
 > - **DNS 解析回退**：未指定 `-dns-server` 时优先使用系统默认解析器（尊重 TUN/代理类软件的本地回环 DNS，如 `::1:53`）；仅当默认解析失败时才依次回退公共 DNS `8.8.8.8:53` / `1.1.1.1:53` / `223.5.5.5:53`，以解决 termux/Android 等环境 Go 原生 resolver 命中无监听的 `::1:53` 导致 `connection refused` 的问题。每次回退均打印明确日志。
 > - **默认开启彩色与时间戳**：`-c`/`--color`（彩色）与 `-d`/`-D`/`--timestamp`（时间戳）默认生效；新增短别名 `-d` 等同 `-D`，新增 `--no-color` / `--no-timestamp` 用于关闭。
-> - 当前版本 `v1.9.9`。
+> - 当前版本 `v1.9.10`。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/2959916298/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="80%" />
@@ -100,14 +100,15 @@ Copyright (c) 2026. All rights reserved.
 
 一键安装脚本（推荐）
 
-#### 🌍 境外服务器
+#### 🌍 境外服务器（GitHub 直连版）
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/2959916298/tcping/main/install.sh) --force
+bash <(curl -Ls https://raw.githubusercontent.com/2959916298/tcping/main/install_github.sh) --force
 ```
 
-#### 🇨🇳 境内服务器（国内优化版）
+#### 🇨🇳 境内服务器（CNB 直连版）
 ```bash
-bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/2959916298/tcping/main/install_cn.sh) --force
+curl -OL https://cnb.cool/l1094/tcping/-/git/raw/main/install_cnb.sh
+sudo bash install_cnb.sh --force
 ```
 
 > **注意：** 脚本会自动安装到 `/usr/local/bin` 目录，需要root权限
@@ -125,7 +126,7 @@ bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/2959916298/tcping
 - **智能检测**：自动检测系统架构和已安装版本
 - **版本管理**：支持安装、更新、卸载操作
 - **依赖处理**：自动检测并安装必要依赖（curl、unzip等）
-- **多源下载**：国内版本支持多个镜像源，提高下载成功率
+- **多源下载**：境内版本全程直连 cnb.cool（公开仓库，无需 token），境外版本使用 GitHub latest 直链
 - **错误处理**：完善的错误处理和用户提示
 
 
@@ -538,8 +539,8 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-w -s" -o tc
 项目提供了 `compiler.sh` 脚本，支持一键编译所有平台版本：
 
 ```bash
-chmod +x compiler.sh
-./compiler.sh
+chmod +x tools/compiler.sh
+./tools/compiler.sh
 ```
 
 编译产物将输出到 `./bin` 目录，并自动生成SHA256校验文件。

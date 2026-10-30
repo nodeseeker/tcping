@@ -9,7 +9,7 @@ main:
         image: golang:1.26
       runner:
         tags: cnb:arch:amd64
-        cpus: 2
+        cpus: 4
       stages:
         # ==================== 安装编译依赖（golang 镜像缺 zip） ====================
         - name: 安装zip
@@ -37,7 +37,7 @@ main:
           type: git:release
           options:
             tag: $TCPING_TAG
-            title: Release $TCPING_TAG
+            title: $TCPING_TAG
             description: |
               TCPing 编译时间 $TCPING_TAG
 
