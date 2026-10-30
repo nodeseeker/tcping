@@ -68,6 +68,40 @@ print_title() {
     echo -e "${BOLD}${BLUE}$1${NC}"
 }
 
+# =====================
+# 下载器探测与下载（curl/wget 二选一，自动回退，缺哪个都能跑）
+# =====================
+DOWNLOADER=""
+
+pick_downloader() {
+    if command -v curl >/dev/null 2>&1; then
+        DOWNLOADER="curl"
+    elif command -v wget >/dev/null 2>&1; then
+        DOWNLOADER="wget"
+    else
+        DOWNLOADER=""
+    fi
+    print_verbose "下载器: ${DOWNLOADER:-无}"
+}
+
+# do_download URL OUTFILE — 下载到文件，失败返回非 0
+do_download() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 --connect-timeout 10 -o "$2" "$1" ;;
+        wget) wget -q -T 15 -O "$2" "$1" ;;
+        *)    print_error "需要 curl 或 wget 才能下载"; return 1 ;;
+    esac
+}
+
+# dl_stdout URL — 输出到标准输出（API/文本抓取用）
+dl_stdout() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 -m 15 "$1" 2>/dev/null ;;
+        wget) wget -qO- -T 15 "$1" 2>/dev/null ;;
+        *)    return 1 ;;
+    esac
+}
+
 # 显示帮助信息
 show_help() {
     cat << EOF
@@ -107,38 +141,57 @@ check_root() {
     print_verbose "Root 权限检查通过"
 }
 
-# 检查系统依赖
+# 检查系统依赖（下载器 curl/wget 二选一；解压用 tar+gzip，均为基础系统组件）
 check_dependencies() {
     local missing_deps=()
-    local deps=("curl" "unzip" "grep" "awk")
-    
-    print_verbose "检查系统依赖..."
-    
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing_deps+=("$dep")
-        fi
-    done
-    
+    local install_list=()
+
+    pick_downloader
+    if [[ -z "$DOWNLOADER" ]]; then
+        missing_deps+=("curl 或 wget")
+        install_list+=("curl")
+    fi
+    if ! command -v tar >/dev/null 2>&1; then
+        missing_deps+=("tar")
+        install_list+=("tar")
+    fi
+    if ! command -v gzip >/dev/null 2>&1; then
+        missing_deps+=("gzip")
+        install_list+=("gzip")
+    fi
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        print_warning "缺少以下依赖程序: ${missing_deps[*]}"
-        echo -n "是否安装缺少的依赖？ [y/N]: "
-        
+        print_warning "缺少依赖: ${missing_deps[*]}"
+        # 按发行版给出安装命令提示
+        if command -v apt-get >/dev/null 2>&1; then
+            print_info "安装: sudo apt-get install -y ${install_list[*]}"
+        elif command -v dnf >/dev/null 2>&1; then
+            print_info "安装: sudo dnf install -y ${install_list[*]}"
+        elif command -v yum >/dev/null 2>&1; then
+            print_info "安装: sudo yum install -y ${install_list[*]}"
+        elif command -v apk >/dev/null 2>&1; then
+            print_info "安装: sudo apk add ${install_list[*]}"
+        elif command -v pacman >/dev/null 2>&1; then
+            print_info "安装: sudo pacman -S --noconfirm ${install_list[*]}"
+        fi
+
+        echo -n "是否自动安装缺少的依赖？ [y/N]: "
         if [[ "$FORCE" == true ]]; then
             echo "y (强制模式)"
-            install_dependencies "${missing_deps[@]}"
+            install_dependencies "${install_list[@]}"
         else
             read -r response
             if [[ "$response" =~ ^[Yy]$ ]]; then
-                install_dependencies "${missing_deps[@]}"
+                install_dependencies "${install_list[@]}"
             else
                 print_error "缺少必要依赖，无法继续安装"
                 exit 1
             fi
         fi
     else
-        print_verbose "所有依赖已满足"
+        print_verbose "依赖检查通过"
     fi
+    pick_downloader  # 自动安装依赖后重新探测
 }
 
 # 安装依赖
@@ -220,8 +273,11 @@ get_current_version() {
 get_latest_version() {
     print_verbose "正在获取最新版本信息..."
     
-    local redirect
-    redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$CNB_LATEST_URL" 2>/dev/null || echo "")
+    local redirect=""
+    case "$DOWNLOADER" in
+        curl) redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$CNB_LATEST_URL" 2>/dev/null || echo "") ;;
+        wget) redirect=$(wget -q --server-response --max-redirect=0 -O /dev/null "$CNB_LATEST_URL" 2>&1 | grep -i '^ *Location:' | tail -1 | awk '{print $2}') ;;
+    esac
     LATEST_TAG=$(echo "$redirect" | sed -n 's#.*/releases/tag/##p')
     
     if [[ -z "$LATEST_TAG" ]]; then
@@ -257,54 +313,28 @@ compare_versions() {
     fi
 }
 
-# 尝试从指定源下载文件
-try_download() {
-    local download_url="$1"
-    local output_file="$2"
-    local timeout=30
-    
-    print_verbose "尝试从源下载: $download_url"
-    
-    # 使用 curl 下载，设置超时（精简超时避免单个源卡太久）
-    if curl -L --connect-timeout 5 --max-time 15 -o "$output_file" "$download_url" 2>/dev/null; then
-        # 验证下载的文件是否为有效的zip文件
-        if unzip -t "$output_file" &>/dev/null; then
-            print_verbose "下载成功: $(basename "$download_url")"
-            return 0
-        else
-            print_verbose "下载的文件损坏，删除并重试"
-            rm -f "$output_file"
-            return 1
-        fi
-    else
-        print_verbose "下载失败: $(basename "$download_url")"
-        rm -f "$output_file"
-        return 1
-    fi
-}
-
 # 下载并安装 tcping
 install_tcping() {
     local arch
     arch=$(get_arch)
     
     print_info "正在为 $arch 架构下载 tcping $LATEST_VERSION..."
-    print_info "下载源: CNB 直连 (cnb.cool)"
+    print_info "下载源: CNB 直连 (cnb.cool)，下载器: ${DOWNLOADER}"
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
     cd "$TEMP_DIR"
     
-    # 构造文件名
-    local filename="tcping-linux-$arch"
-    local output_file="tcping.zip"
+    # Linux 分发为 tar.gz（tar+gzip 是基础系统组件，省 unzip 依赖）
+    local filename="tcping-linux-$arch.tar.gz"
+    local output_file="$filename"
     
     # 附件直链必须使用具体 tag（CNB 不支持 latest 下载路径）
-    local download_url="$CNB_DL_BASE/$LATEST_TAG/${filename}.zip"
+    local download_url="$CNB_DL_BASE/$LATEST_TAG/${filename}"
     
     print_verbose "下载 URL: $download_url"
     
-    if ! try_download "$download_url" "$output_file"; then
+    if ! do_download "$download_url" "$output_file"; then
         print_error "下载失败"
         print_info "可能的原因："
         print_info "1. 网络连接问题"
@@ -314,9 +344,16 @@ install_tcping() {
         exit 1
     fi
     
+    # 校验压缩包完整性
+    if ! tar -tzf "$output_file" >/dev/null 2>&1; then
+        print_error "下载的压缩包损坏"
+        cleanup
+        exit 1
+    fi
+    
     # 解压文件
     print_verbose "正在解压文件..."
-    if ! unzip -q "$output_file"; then
+    if ! tar -xzf "$output_file"; then
         print_error "解压失败"
         cleanup
         exit 1

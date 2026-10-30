@@ -77,12 +77,16 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     OUT_FILE="$OUT_FILE.exe"
   fi
 
-  # 压缩成 .zip 文件
+  # 压缩分发包：Windows 用 zip，其余用 tar.gz
+  # （Linux 服务器普遍没有 unzip，而 tar+gzip 是基础系统组件，能省一个依赖）
   echo "压缩 ${OUT_FILE}..."
-  zip -j "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" "$OUT_FILE"
-
-  # 计算 SHA256 值并追加到 SHA256SUMS.txt 中
-  sha256sum "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" >> "$OUT_DIR/SHA256SUMS.txt"
+  if [ "$GOOS" == "windows" ]; then
+    zip -j "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" "$OUT_FILE"
+    sha256sum "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.zip" >> "$OUT_DIR/SHA256SUMS.txt"
+  else
+    tar -czf "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.tar.gz" -C "$OUT_DIR" "$APP_NAME"
+    sha256sum "$OUT_DIR/$APP_NAME-${GOOS}-${GOARCH}.tar.gz" >> "$OUT_DIR/SHA256SUMS.txt"
+  fi
 
   # 清理中间文件
   rm "$OUT_FILE"

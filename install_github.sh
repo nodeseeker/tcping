@@ -64,6 +64,40 @@ print_title() {
     echo -e "${BOLD}${BLUE}$1${NC}"
 }
 
+# =====================
+# 下载器探测与下载（curl/wget 二选一，自动回退，缺哪个都能跑）
+# =====================
+DOWNLOADER=""
+
+pick_downloader() {
+    if command -v curl >/dev/null 2>&1; then
+        DOWNLOADER="curl"
+    elif command -v wget >/dev/null 2>&1; then
+        DOWNLOADER="wget"
+    else
+        DOWNLOADER=""
+    fi
+    print_verbose "下载器: ${DOWNLOADER:-无}"
+}
+
+# do_download URL OUTFILE — 下载到文件，失败返回非 0
+do_download() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 --connect-timeout 10 -o "$2" "$1" ;;
+        wget) wget -q -T 15 -O "$2" "$1" ;;
+        *)    print_error "需要 curl 或 wget 才能下载"; return 1 ;;
+    esac
+}
+
+# dl_stdout URL — 输出到标准输出（API/文本抓取用）
+dl_stdout() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 -m 15 "$1" 2>/dev/null ;;
+        wget) wget -qO- -T 15 "$1" 2>/dev/null ;;
+        *)    return 1 ;;
+    esac
+}
+
 # 显示帮助信息
 show_help() {
     cat << EOF
@@ -98,38 +132,57 @@ check_root() {
     print_verbose "Root 权限检查通过"
 }
 
-# 检查系统依赖
+# 检查系统依赖（下载器 curl/wget 二选一；解压用 tar+gzip，均为基础系统组件）
 check_dependencies() {
     local missing_deps=()
-    local deps=("curl" "unzip" "grep" "awk")
-    
-    print_verbose "检查系统依赖..."
-    
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing_deps+=("$dep")
-        fi
-    done
-    
+    local install_list=()
+
+    pick_downloader
+    if [[ -z "$DOWNLOADER" ]]; then
+        missing_deps+=("curl 或 wget")
+        install_list+=("curl")
+    fi
+    if ! command -v tar >/dev/null 2>&1; then
+        missing_deps+=("tar")
+        install_list+=("tar")
+    fi
+    if ! command -v gzip >/dev/null 2>&1; then
+        missing_deps+=("gzip")
+        install_list+=("gzip")
+    fi
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        print_warning "缺少以下依赖程序: ${missing_deps[*]}"
-        echo -n "是否安装缺少的依赖？ [y/N]: "
-        
+        print_warning "缺少依赖: ${missing_deps[*]}"
+        # 按发行版给出安装命令提示
+        if command -v apt-get >/dev/null 2>&1; then
+            print_info "安装: sudo apt-get install -y ${install_list[*]}"
+        elif command -v dnf >/dev/null 2>&1; then
+            print_info "安装: sudo dnf install -y ${install_list[*]}"
+        elif command -v yum >/dev/null 2>&1; then
+            print_info "安装: sudo yum install -y ${install_list[*]}"
+        elif command -v apk >/dev/null 2>&1; then
+            print_info "安装: sudo apk add ${install_list[*]}"
+        elif command -v pacman >/dev/null 2>&1; then
+            print_info "安装: sudo pacman -S --noconfirm ${install_list[*]}"
+        fi
+
+        echo -n "是否自动安装缺少的依赖？ [y/N]: "
         if [[ "$FORCE" == true ]]; then
             echo "y (强制模式)"
-            install_dependencies "${missing_deps[@]}"
+            install_dependencies "${install_list[@]}"
         else
             read -r response
             if [[ "$response" =~ ^[Yy]$ ]]; then
-                install_dependencies "${missing_deps[@]}"
+                install_dependencies "${install_list[@]}"
             else
                 print_error "缺少必要依赖，无法继续安装"
                 exit 1
             fi
         fi
     else
-        print_verbose "所有依赖已满足"
+        print_verbose "依赖检查通过"
     fi
+    pick_downloader  # 自动安装依赖后重新探测
 }
 
 # 安装依赖
@@ -210,7 +263,7 @@ get_latest_version() {
     print_verbose "正在获取最新版本信息..."
     
     local api_response
-    api_response=$(curl -s "$GITHUB_API/releases/latest" 2>/dev/null || echo "")
+    api_response=$(dl_stdout "$GITHUB_API/releases/latest" || true)
     
     if [[ -n "$api_response" ]]; then
         LATEST_TAG=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
@@ -255,6 +308,7 @@ install_tcping() {
     arch=$(get_arch)
     
     print_info "正在为 $arch 架构下载 tcping $LATEST_VERSION..."
+    print_info "下载器: ${DOWNLOADER}"
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
@@ -262,20 +316,28 @@ install_tcping() {
     
     # 构造下载 URL - GitHub 支持 releases/latest/download 直链，
     # 与 tag 无关（时间戳 tag 也兼容），无需依赖 API 获取的版本号
-    local download_url="$GITHUB_REPO/releases/latest/download/tcping-linux-$arch.zip"
+    local download_url="$GITHUB_REPO/releases/latest/download/tcping-linux-$arch.tar.gz"
+    local output_file="tcping-linux-$arch.tar.gz"
     
     print_verbose "下载 URL: $download_url"
     
-    # 下载文件
-    if ! curl -L -o "tcping.zip" "$download_url"; then
+    # 下载文件（tar.gz：tar+gzip 是基础系统组件，省 unzip 依赖）
+    if ! do_download "$download_url" "$output_file"; then
         print_error "下载失败"
+        cleanup
+        exit 1
+    fi
+    
+    # 校验压缩包完整性
+    if ! tar -tzf "$output_file" >/dev/null 2>&1; then
+        print_error "下载的压缩包损坏"
         cleanup
         exit 1
     fi
     
     # 解压文件
     print_verbose "正在解压文件..."
-    if ! unzip -q "tcping.zip"; then
+    if ! tar -xzf "$output_file"; then
         print_error "解压失败"
         cleanup
         exit 1

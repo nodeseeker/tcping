@@ -7,7 +7,7 @@ tcping 编译包装脚本（Python 版，对齐 tools/compiler.sh 的输出逻�
   - 输出目录 ./bin（已被 .gitignore 忽略，不会被追踪）
   - 清理旧产物后重新编译
   - 仅编译 win/amd64、linux/amd64、linux/arm64 三个目标
-  - 每个产物用 zip 压缩为 tcping-${GOOS}-${GOARCH}.zip
+  - 压缩分发包: Windows 为 .zip，其余平台为 .tar.gz（tcping-${GOOS}-${GOARCH}.tar.gz）
   - 计算 SHA256 并追加到 ./bin/<编译时间>/SHA256SUMS.txt
 
 本脚本在 shell 版基础上增加的便利项（自用）：
@@ -30,6 +30,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 
 SRC_PATH = "./src"  # 必须用包路径；用 ./src/main.go 文件参数会导致 ldflags -X 注入失效
@@ -110,18 +111,25 @@ def main() -> int:
         # 保留二进制（方便本地测试 / 直接复制到目标机）
         bin_name = os.path.basename(out_file)
 
-        # 压缩为 tcping-${GOOS}-${GOARCH}.zip（zip 内仅含二进制，等价 zip -j），放根目录便于集中分发
-        zip_name = f"{APP_NAME}-{goos}-{goarch}.zip"
-        zip_path = os.path.join(build_dir, zip_name)
-        print(f"压缩 {out_file} -> {zip_name}...")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(out_file, bin_name)
+        # 压缩分发包：Windows 用 zip，Linux 用 tar.gz（tar+gzip 基础组件，省 unzip 依赖）
+        if goos == "windows":
+            archive_name = f"{APP_NAME}-{goos}-{goarch}.zip"
+            archive_path = os.path.join(build_dir, archive_name)
+            print(f"压缩 {out_file} -> {archive_name}...")
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(out_file, bin_name)
+        else:
+            archive_name = f"{APP_NAME}-{goos}-{goarch}.tar.gz"
+            archive_path = os.path.join(build_dir, archive_name)
+            print(f"压缩 {out_file} -> {archive_name}...")
+            with tarfile.open(archive_path, "w:gz") as tf:
+                tf.add(out_file, arcname=bin_name)
 
-        # 计算 SHA256 并追加（同时记录二进制与 zip 的校验值）
-        zip_digest = sha256_of(zip_path)
+        # 计算 SHA256 并追加（同时记录二进制与压缩包的校验值）
+        archive_digest = sha256_of(archive_path)
         bin_digest = sha256_of(out_file)
         with open(sha256sums, "a", encoding="utf-8") as f:
-            f.write(f"{zip_digest}  {zip_name}\n")
+            f.write(f"{archive_digest}  {archive_name}\n")
             f.write(f"{bin_digest}  {bin_name}\n")
 
         # 二进制保留在 plat_dir，不再删除

@@ -53,4 +53,5 @@ main:
             tag: $TCPING_TAG
             attachments:
               - "./bin/*.zip"
+              - "./bin/*.tar.gz"
               - "./bin/SHA256SUMS.txt"
