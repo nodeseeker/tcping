@@ -1,0 +1,11 @@
+# 按钮定义文件（不支持 include 和 imports）
+# 按钮必须在此文件中定义，不能在其他文件中定义。
+
+branch:
+  # ==================== 构建发布分组 ====================
+  - buttons:
+      - name: 构建tcping并发布Release
+        description: 构建全平台二进制并发布 Release，tag 为 v版本-yyyymmdd-hhmmss
+        event: web_trigger_build_release
+        groupName: 构建发布
+        isDefault: false

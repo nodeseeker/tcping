@@ -32,7 +32,7 @@ import subprocess
 import sys
 import zipfile
 
-SRC_PATH = "src/main.go"
+SRC_PATH = "./src"  # 必须用包路径；用 ./src/main.go 文件参数会导致 ldflags -X 注入失效
 OUT_DIR = "bin"
 APP_NAME = "tcping"
 
@@ -59,6 +59,9 @@ def main() -> int:
     # 编译时间戳文件夹，便于区分每次构建产物（如 bin/20260824_153000）
     build_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     build_dir = os.path.join(OUT_DIR, build_time)
+
+    # 注入到二进制的构建时间（yyyymmdd-hhmmss，所有平台共用同一个）
+    ver_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # 仅清理本次构建的时间戳目录（每次时间戳不同，旧构建自然保留，不误删其它文件）
     if os.path.isdir(build_dir):
@@ -88,7 +91,7 @@ def main() -> int:
             [
                 "go", "build",
                 "-trimpath",
-                "-ldflags=-w -s",
+                f"-ldflags=-w -s -X main.buildTime={ver_stamp}",
                 "-o", out_file,
                 SRC_PATH,
             ],

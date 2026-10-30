@@ -17,14 +17,24 @@ import (
 )
 
 const (
-	version     = "v1.9.9"
 	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
+
+	repoGitHub = "https://github.com/2959916298/tcping"
+	repoCNB    = "https://cnb.cool/l1094/tcping"
 
 	defaultCSVFlushEvery = 50
 	defaultCSVFlushTick  = 1 * time.Second
 
 	defaultPort = 80
+)
+
+// version 为语义化版本号；buildTime 由构建时注入：
+// go build -ldflags "-X tcping/src.buildTime=yyyymmdd-hhmmss"
+// 未注入时（go run / 本地调试）不显示构建时间。
+var (
+	version   = "v1.9.9"
+	buildTime = ""
 )
 
 // =====================
@@ -799,8 +809,17 @@ func printHelp() {
 }
 
 func printVersion() {
-	fmt.Printf("%s 版本 %s\n", programName, version)
+	display := version
+	if buildTime != "" {
+		display = fmt.Sprintf("%s-%s", version, buildTime)
+	}
+	fmt.Printf("%s 版本 %s\n", programName, display)
+	if buildTime != "" {
+		fmt.Printf("构建时间: %s\n", buildTime)
+	}
 	fmt.Println(copyright)
+	fmt.Printf("GitHub: %s\n", repoGitHub)
+	fmt.Printf("CNB:    %s\n", repoCNB)
 }
 
 func printSummary(stats *Statistics, verbose bool, displayHost, port string) {

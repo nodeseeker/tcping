@@ -1,0 +1,56 @@
+# 主配置文件 - 按钮触发构建并发布 Release
+# tag 格式: v版本-yyyymmdd-hhmmss（版本号/构建时间由 tools/compiler.sh 统一写入 bin/VERSION、bin/BUILD_TIME）
+# 按钮定义在 .cnb/web_trigger.yml（按钮必须在该文件中定义，不能在此文件）
+
+main:
+  web_trigger_build_release:
+    - name: 构建 tcping 全平台并发布 Release
+      docker:
+        image: golang:1.26
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 2
+      stages:
+        # ==================== 安装编译依赖（golang 镜像缺 zip） ====================
+        - name: 安装zip
+          script: apt-get update -qq && apt-get install -y -qq zip
+
+        # ==================== 全平台编译（复用 tools/compiler.sh） ====================
+        # compiler.sh 内部: BUILD_TIME 只算一次(所有平台共用) + ldflags 注入 main.buildTime
+        # + 写出 bin/VERSION、bin/BUILD_TIME、bin/SHA256SUMS.txt
+        - name: 全平台编译
+          script: bash tools/compiler.sh
+
+        # ==================== 拼接 release tag: v版本-yyyymmdd-hhmmss ====================
+        - name: 解析tag
+          script: |
+            ver=$(cat bin/VERSION)
+            bt=$(cat bin/BUILD_TIME)
+            tag="${ver}-${bt}"
+            echo "版本: $ver  构建时间: $bt  tag: $tag"
+            echo "##[set-output tag=$tag]"
+          exports:
+            tag: TCPING_TAG
+
+        # ==================== 创建 Release ====================
+        - name: 创建Release
+          type: git:release
+          options:
+            tag: $TCPING_TAG
+            title: Release $TCPING_TAG
+            description: |
+              TCPing 编译时间 $TCPING_TAG
+
+              开源地址:
+              - GitHub: https://github.com/2959916298/tcping
+              - CNB: https://cnb.cool/l1094/tcping
+            latest: true
+
+        # ==================== 上传附件到 Release ====================
+        - name: 上传附件到Release
+          image: cnbcool/attachments:latest
+          settings:
+            tag: $TCPING_TAG
+            attachments:
+              - "./bin/*.zip"
+              - "./bin/SHA256SUMS.txt"
