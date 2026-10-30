@@ -7,6 +7,10 @@ main:
     - name: 构建 tcping 全平台并发布 Release
       docker:
         image: golang:1.26
+        # 节点缓存：Go 模块缓存 + 编译缓存（copy-on-write 支持并发构建，命中时省去 stdlib 交叉编译）
+        volumes:
+          - /root/go/pkg/mod:copy-on-write
+          - /root/.cache/go-build:copy-on-write
       runner:
         tags: cnb:arch:amd64
         cpus: 4
