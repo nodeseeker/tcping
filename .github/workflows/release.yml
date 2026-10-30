@@ -3,13 +3,11 @@ name: Build and Release
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# 版本号唯一来源: src/version.txt（纯数字）
+# tag 自动派生: v<version.txt>-<yyyymmdd-hhmmss>，无需手动输入
+
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release tag (留空则自动: v版本-yyyymmdd-hhmmss)'
-        required: false
-        default: ''
 
 jobs:
   build:
@@ -46,7 +44,8 @@ jobs:
           fi
 
       # 编译逻辑复用 tools/compiler.sh（与 CNB .cnb.yml 同一份脚本）
-      # 内部: BUILD_TIME 只算一次(所有平台共用) + 注入 main.buildTime + 写 bin/VERSION、bin/BUILD_TIME
+      # 内部: 读 src/version.txt + BUILD_TIME 只算一次(所有平台共用) + 注入 main.buildTime
+      # + 写 bin/VERSION、bin/BUILD_TIME
       - name: Build for all platforms (tools/compiler.sh)
         env:
           CGO_ENABLED: 0
@@ -54,13 +53,7 @@ jobs:
 
       - name: Compute tag
         id: tag
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            TAG="${{ github.event.inputs.version }}"
-          else
-            TAG="$(cat bin/VERSION)-$(cat bin/BUILD_TIME)"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$(cat bin/VERSION)-$(cat bin/BUILD_TIME)" >> "$GITHUB_OUTPUT"
 
       - name: Create or update Release
         env:

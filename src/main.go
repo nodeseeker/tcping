@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/csv"
 	"errors"
 	"flag"
@@ -29,11 +30,15 @@ const (
 	defaultPort = 80
 )
 
-// version 为语义化版本号；buildTime 由构建时注入：
-// go build -ldflags "-X tcping/src.buildTime=yyyymmdd-hhmmss"
+// 版本号唯一来源: src/version.txt（纯数字，如 1.9.10），编译期嵌入，代码与 CI 脚本共用
+//go:embed version.txt
+var versionFile string
+
+// buildTime 由构建时注入（所有平台共用同一个值）:
+// go build -ldflags "-X main.buildTime=yyyymmdd-hhmmss"
 // 未注入时（go run / 本地调试）不显示构建时间。
 var (
-	version   = "v1.9.9"
+	version   = "v" + strings.TrimSpace(versionFile)
 	buildTime = ""
 )
 

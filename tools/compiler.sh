@@ -22,10 +22,14 @@ APP_NAME="tcping"
 BUILD_TIME="${BUILD_TIME:-$(TZ=Asia/Shanghai date +%Y%m%d-%H%M%S)}"
 export BUILD_TIME
 
-# 从源码提取版本号（src/main.go: version = "vX.Y.Z"）
-VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(v[^"]*\)".*/\1/p' src/main.go | head -n1)
-if [ -z "$VERSION" ]; then
-  echo "错误: 无法从 src/main.go 解析版本号" >&2
+# 从 src/version.txt 读取版本号（唯一来源，纯数字如 1.9.10；Go 侧 go:embed 同源）
+if [ ! -f src/version.txt ]; then
+  echo "错误: 找不到 src/version.txt" >&2
+  exit 1
+fi
+VERSION="v$(tr -d '[:space:]' < src/version.txt)"
+if [ -z "$(tr -d '[:space:]' < src/version.txt)" ]; then
+  echo "错误: src/version.txt 内容为空" >&2
   exit 1
 fi
 
