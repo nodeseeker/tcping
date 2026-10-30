@@ -717,7 +717,7 @@ func normalizeDNSServer(raw string) (string, error) {
 
 func parseTarget(opts *Options, args []string) (host string, port string, err error) {
 	if len(args) < 1 {
-		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
+		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息 -v为详细模式，-V是查看版本\n" + versionBlock())
 	}
 
 	rawHost := strings.TrimSpace(args[0])
@@ -813,18 +813,25 @@ func printHelp() {
 `, programName, version, programName)
 }
 
-func printVersion() {
+// versionBlock 返回版本信息文本（-V 与无参数错误提示共用）
+func versionBlock() string {
+	var b strings.Builder
 	display := version
 	if buildTime != "" {
 		display = fmt.Sprintf("%s-%s", version, buildTime)
 	}
-	fmt.Printf("%s 版本 %s\n", programName, display)
+	fmt.Fprintf(&b, "%s 版本 %s\n", programName, display)
 	if buildTime != "" {
-		fmt.Printf("构建时间: %s\n", buildTime)
+		fmt.Fprintf(&b, "构建时间: %s\n", buildTime)
 	}
-	fmt.Println(copyright)
-	fmt.Printf("GitHub: %s\n", repoGitHub)
-	fmt.Printf("CNB:    %s\n", repoCNB)
+	fmt.Fprintln(&b, copyright)
+	fmt.Fprintf(&b, "GitHub: %s\n", repoGitHub)
+	fmt.Fprintf(&b, "CNB:    %s\n", repoCNB)
+	return b.String()
+}
+
+func printVersion() {
+	fmt.Print(versionBlock())
 }
 
 func printSummary(stats *Statistics, verbose bool, displayHost, port string) {
