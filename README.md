@@ -100,14 +100,17 @@ Copyright (c) 2026. All rights reserved.
 
 一键安装脚本（推荐）
 
+> 先下载脚本再执行，root 登录与非 root（有 sudo）均适用；root 下可省略 `sudo`。
+
 #### 🌍 境外服务器（GitHub 直连版）
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/2959916298/tcping/main/install_github.sh) --force
+curl -Ls -o /tmp/install_github.sh https://raw.githubusercontent.com/2959916298/tcping/main/install_github.sh
+sudo bash /tmp/install_github.sh --force
 ```
 
 #### 🇨🇳 境内服务器（CNB 直连版）
 ```bash
-curl -OL https://cnb.cool/l1094/tcping/-/git/raw/main/install_cnb.sh
+curl -sSOL https://cnb.cool/l1094/tcping/-/git/raw/main/install_cnb.sh
 sudo bash install_cnb.sh --force
 ```
 
