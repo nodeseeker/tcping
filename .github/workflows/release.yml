@@ -7,6 +7,12 @@ env:
 # tag 自动派生: v<version.txt>-<yyyymmdd-hhmmss>，无需手动输入
 
 on:
+  # 推 tag 触发（发版）：git tag v1.9.12 && git push origin v1.9.12
+  # 不再对分支 push 自动构建，避免每次提交都发版
+  push:
+    tags:
+      - 'v*'
+  # 手动触发（补发/重跑）
   workflow_dispatch:
 
 jobs:
