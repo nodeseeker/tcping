@@ -1,0 +1,78 @@
+# tcping 构建发布流程（yml 级复用流程块）
+# 说明：
+#   1. CNB 的 include 不支持跨文件使用 YAML 锚点，所以锚点必须在本文件内定义；
+#      主 .cnb.yml 通过 include 引入本文件，其 main 会与主配置深度合并。
+#   2. 构建/发布步骤只在 .release_base 锚点里写一次，push 自动触发与手动按钮共用。
+#   3. tag 格式: v<src/version.txt>-<yyyymmdd-hhmmss>，由 tools/compiler.sh 写入 bin/VERSION、bin/BUILD_TIME。
+
+main:
+  # ==================== 复用流程块（锚点） ====================
+  .release_base: &release_base
+    docker:
+      image: golang:1.26
+    runner:
+      tags: cnb:arch:amd64
+      cpus: 4
+    # Go 模块缓存 + 编译缓存（copy-on-write 支持并发构建，命中时省去 stdlib 交叉编译）
+    volumes:
+      - /root/go/pkg/mod:copy-on-write
+      - /root/.cache/go-build:copy-on-write
+    env:
+      CGO_ENABLED: "0"
+    stages:
+      # ==================== 安装编译依赖（golang 镜像缺 zip） ====================
+      - name: 安装zip
+        script: apt-get update -qq && apt-get install -y -qq zip
+
+      # ==================== 全平台编译（复用 tools/compiler.sh） ====================
+      # compiler.sh 内部: BUILD_TIME 只算一次(所有平台共用) + ldflags 注入 main.buildTime
+      # + 写出 bin/VERSION、bin/BUILD_TIME、bin/SHA256SUMS.txt
+      - name: 全平台编译
+        script: bash tools/compiler.sh
+
+      # ==================== 拼接 release tag ====================
+      - name: 解析tag
+        script: |
+          ver=$(cat bin/VERSION)
+          bt=$(cat bin/BUILD_TIME)
+          tag="v${ver}-${bt}"
+          echo "版本: $ver  构建时间: $bt  tag: $tag"
+          echo "##[set-output tag=$tag]"
+        exports:
+          tag: TCPING_TAG
+
+      # ==================== 创建 Release ====================
+      - name: 创建Release
+        type: git:release
+        options:
+          tag: $TCPING_TAG
+          title: $TCPING_TAG
+          description: |
+            TCPing 编译时间 $TCPING_TAG
+
+            开源地址:
+            - GitHub: https://github.com/2959916298/tcping
+            - CNB: https://cnb.cool/l1094/tcping
+          latest: true
+
+      # ==================== 上传附件到 Release ====================
+      - name: 上传附件到Release
+        image: cnbcool/attachments:latest
+        settings:
+          tag: $TCPING_TAG
+          attachments:
+            - "./bin/*.zip"
+            - "./bin/*.tar.gz"
+            - "./bin/SHA256SUMS.txt"
+
+  # ==================== push 自动触发 ====================
+  # 推送到本仓库即自动构建并发布，无需点按钮
+  push:
+    - name: 构建tcping并发布Release(push自动)
+      <<: *release_base
+
+  # ==================== 手动按钮触发 ====================
+  # 按钮定义见 .cnb/web_trigger.yml（event: web_trigger_build_release）
+  web_trigger_build_release:
+    - name: 构建tcping并发布Release(手动)
+      <<: *release_base
