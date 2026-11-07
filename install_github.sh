@@ -33,6 +33,9 @@ readonly TEMP_DIR="/tmp/tcping_install"
 VERBOSE=false
 FORCE=false
 UNINSTALL=false
+NO_INSTALL=false          # -o/-O：只下载输出二进制，不安装到系统
+OUTPUT_DIR=""             # 不安装模式的输出目录（会转成绝对路径）
+ORIG_PWD="$(pwd)"         # 调用脚本时的当前目录，-O 输出到此
 CURRENT_VERSION=""
 LATEST_TAG=""
 LATEST_VERSION=""
@@ -108,15 +111,19 @@ TCPing 安装脚本
 选项:
     -u, --uninstall     卸载 tcping
     -f, --force         强制安装（跳过确认）
+    -o, --output <目录> 不安装，仅下载并输出二进制到指定目录（无需 root）
+    -O, --output-cwd    不安装，仅下载并输出二进制到当前目录（无需 root）
     -v, --verbose       详细输出
     -h, --help          显示此帮助信息
 
 支持的架构: amd64, arm64, 386, arm, loong64
 
 示例:
-    sudo $0             # 安装或更新 tcping
+    sudo $0             # 安装或更新 tcping（装到 /usr/local/bin）
     sudo $0 -u          # 卸载 tcping
     sudo $0 -f          # 强制安装
+    sudo $0 -o ./dist   # 只下载输出到 ./dist，不安装（无需 root）
+    $0 -O               # 只下载输出到当前目录，不安装（无需 root）
     sudo $0 -v          # 详细输出安装过程
 
 EOF
@@ -353,6 +360,22 @@ install_tcping() {
         exit 1
     fi
     
+    # 不安装模式：仅把二进制复制到指定目录
+    if [[ "$NO_INSTALL" == true ]]; then
+        local dest="$OUTPUT_DIR/$TCPING_BIN"
+        print_verbose "正在输出到 $dest..."
+        if ! cp "$binary_file" "$dest"; then
+            print_error "输出失败：无法写入 $dest"
+            cleanup
+            exit 1
+        fi
+        chmod +x "$dest"
+        cleanup
+        print_success "tcping $LATEST_VERSION 已输出: $dest"
+        print_info "未安装到系统 PATH；直接运行: $dest <主机> [端口]"
+        return 0
+    fi
+
     # 安装二进制文件
     print_verbose "正在安装到 $INSTALL_DIR/$TCPING_BIN..."
     if ! cp "$binary_file" "$INSTALL_DIR/$TCPING_BIN"; then
@@ -425,6 +448,20 @@ main() {
                 VERBOSE=true
                 shift
                 ;;
+            -o|--output)
+                if [[ $# -lt 2 ]]; then
+                    print_error "-o 需要指定输出目录，例如: $0 -o ./dist"
+                    exit 1
+                fi
+                OUTPUT_DIR="$2"
+                NO_INSTALL=true
+                shift 2
+                ;;
+            -O|--output-cwd)
+                OUTPUT_DIR="$ORIG_PWD"
+                NO_INSTALL=true
+                shift
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -442,7 +479,16 @@ main() {
     echo
     
     # 检查权限
-    check_root
+    # -u 与 -o/-O 互斥
+    if [[ "$UNINSTALL" == true && "$NO_INSTALL" == true ]]; then
+        print_error "-u/--uninstall 不能与 -o/-O 同时使用"
+        exit 1
+    fi
+
+    # 不安装模式（-o/-O）只下载输出，无需 root
+    if [[ "$NO_INSTALL" != true ]]; then
+        check_root
+    fi
     
     # 如果是卸载模式
     if [[ "$UNINSTALL" == true ]]; then
@@ -452,6 +498,15 @@ main() {
     
     # 检查依赖
     check_dependencies
+
+    # 不安装模式：直接下载输出二进制，跳过已装版本比较与确认
+    if [[ "$NO_INSTALL" == true ]]; then
+        get_latest_version
+        mkdir -p "$OUTPUT_DIR"
+        OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+        install_tcping
+        exit 0
+    fi
     
     # 获取版本信息
     get_current_version

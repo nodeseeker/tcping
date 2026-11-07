@@ -1,0 +1,5 @@
+# 统一行尾为 LF：避免 Windows 下 core.autocrlf=true 把 CRLF 带入
+# shell 脚本 / CI 配置（Linux 上执行会因 \r 报 "未预期的记号"）
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf

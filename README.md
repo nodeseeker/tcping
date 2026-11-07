@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-blue.svg)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-v1.9.10-green.svg)](https://github.com/2959916298/tcping/releases)
+[![Version](https://img.shields.io/badge/Version-v1.9.12-green.svg)](https://github.com/2959916298/tcping/releases)
 
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
@@ -10,8 +10,8 @@
 >
 > 本仓库（`2959916298/tcping`）在 upstream 基础上做了以下改动：
 > - **DNS 解析回退**：未指定 `-dns-server` 时优先使用系统默认解析器（尊重 TUN/代理类软件的本地回环 DNS，如 `::1:53`）；仅当默认解析失败时才依次回退公共 DNS `8.8.8.8:53` / `1.1.1.1:53` / `223.5.5.5:53`，以解决 termux/Android 等环境 Go 原生 resolver 命中无监听的 `::1:53` 导致 `connection refused` 的问题。每次回退均打印明确日志。
-> - **默认开启彩色与时间戳**：`-c`/`--color`（彩色）与 `-d`/`-D`/`--timestamp`（时间戳）默认生效；新增短别名 `-d` 等同 `-D`，新增 `--no-color` / `--no-timestamp` 用于关闭。
-> - 当前版本 `v1.9.10`。
+> - **默认开启彩色与时间戳**：`--color`（彩色）与 `-d`/`-D`/`--timestamp`（时间戳）默认生效；`-c` 改为 `-n` 的次数别名（关闭彩色用 `--no-color`）；新增 `--no-timestamp` 用于关闭时间戳。
+> - 当前版本 `v1.9.12`。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/2959916298/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="80%" />
@@ -152,7 +152,8 @@ tcping [选项] <主机> [端口]
 | `-w` | `--timeout` | 连接超时时间（毫秒） | 1000ms |
 |  | `--dns-timeout` | DNS 解析超时时间（毫秒） | 1500ms |
 |  | `--dns-server` | 指定 DNS 服务器（如 1.1.1.1 或 8.8.8.8:53） | 系统默认 |
-| `-c` | `--color` | 启用彩色输出 | 关闭 |
+| `-c` | （无） | 次数别名，等价于 `-n` | 无限 |
+|  | `--color` | 启用彩色输出（默认已开，用 `--no-color` 关闭） | 开启 |
 | `-v` | `--verbose` | 启用详细模式（包含抖动统计） | 关闭 |
 | `-D` | `--timestamp` | 在每条结果前显示时间戳（yyyy-mm-dd hh:mm:ss） | 关闭 |
 | `-V` | `--version` | 显示版本信息 | - |
@@ -229,7 +230,7 @@ $ tcping -6 ipv6.google.com 443
 
 #### 彩色输出和详细模式
 ```bash
-$ tcping -c -v github.com 443
+$ tcping -v github.com 443
 正在对 github.com (IPv4 - 20.205.243.166) 端口 443 执行 TCP Ping
 域名 github.com 解析到的所有IP地址:
   [1] IPv4: 20.205.243.166
@@ -265,7 +266,7 @@ $ tcping -D -n 2 example.com 443
 
 #### 网络质量分析
 ```bash
-$ tcping -v -n 10 -c unstable-server.com 80
+$ tcping -v -n 10 unstable-server.com 80
 正在对 unstable-server.com (IPv4 - 203.0.113.10) 端口 80 执行 TCP Ping
 从 203.0.113.10:80 收到响应: seq=0 time=45.23ms
 从 203.0.113.10:80 收到响应: seq=1 time=52.67ms
@@ -337,7 +338,7 @@ CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_ad
 | SSH服务测试 | `tcping -p 22 server.com` | 测试SSH连接 |
 | 数据库连接测试 | `tcping -p 3306 db.server.com` | 测试MySQL连接 |
 | 快速诊断 | `tcping -n 3 -w 500 host.com 80` | 3次快速测试 |
-| 持续监控 | `tcping -t 5000 -c service.com 443` | 每5秒测试一次 |
+| 持续监控 | `tcping -t 5000 service.com 443` | 每5秒测试一次 |
 | 网络质量分析 | `tcping -v -n 20 target.com 443` | 详细统计含抖动分析 |
 | 多IP域名测试 | `tcping -v cdn.example.com 80` | 查看域名所有IP并测试首个IP |
 | CSV记录 | `tcping -o example.com` | 将结果保存为CSV文件 |
@@ -426,7 +427,7 @@ TCPing 提供了全面的错误处理机制：
 - 📡 **网络不可达**：路由或网络配置问题
 
 ### 用户友好提示
-- 彩色错误输出（启用 `-c` 选项时）
+- 彩色错误输出（默认启用，`--no-color` 关闭）
 - 详细的错误描述和可能的解决建议
 - 完整的统计信息，包括失败次数和丢包率
 - 详细模式下提供网络抖动分析，帮助诊断网络稳定性

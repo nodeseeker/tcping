@@ -598,6 +598,9 @@ func setupFlags(opts *Options) {
 
 	flag.IntVar(&opts.Count, "n", 0, "")
 	flag.IntVar(&opts.Count, "count", 0, "")
+	// -c 历史上是彩色开关；彩色现已默认开启（关闭用 --no-color），
+	// 故 -c 改为与 -n 等价的次数别名：-c 5 等价于 -n 5。
+	flag.IntVar(&opts.Count, "c", 0, "")
 
 	intervalMS := flag.Int("t", 1000, "")
 	flag.IntVar(intervalMS, "interval", 1000, "")
@@ -611,8 +614,8 @@ func setupFlags(opts *Options) {
 	flag.IntVar(&opts.Port, "p", defaultPort, "")
 	flag.IntVar(&opts.Port, "port", defaultPort, "")
 
-	// 彩色输出：默认开启；-c/--color 保持兼容，-c 仍可显式开启；--no-color 关闭。
-	flag.BoolVar(&opts.ColorOutput, "c", true, "")
+	// 彩色输出：默认开启；--color 兼容显式开启，--no-color 关闭。
+	// -c 已改为次数别名，不再控制颜色。
 	flag.BoolVar(&opts.ColorOutput, "color", true, "")
 	flag.BoolVar(&opts.NoColor, "no-color", false, "")
 
@@ -789,7 +792,8 @@ func printHelp() {
     -w, --timeout <毫秒>        连接超时 (默认: 1000)
         --dns-timeout <毫秒>    DNS 解析超时 (默认: 1500)
 	    --dns-server <地址>     指定 DNS 服务器 (如: 8.8.8.8 或 8.8.8.8:53)
-    -c, --color                 启用彩色输出 (默认已开启)
+    -c <次数>                   同 -n 的别名（发送请求次数）
+        --color                 启用彩色输出 (默认已开启)
         --no-color              关闭彩色输出
     -v, --verbose               启用详细模式
 	-d, -D, --timestamp         显示时间戳 (yyyy-mm-dd hh:mm:ss，默认已开启)
@@ -808,7 +812,7 @@ func printHelp() {
     tcping -4 -n 5 8.8.8.8 443
     tcping -w 2000 example.com 22
 	tcping --dns-server 1.1.1.1 github.com 443
-    tcping -c -v example.com 443
+    tcping -c 5 -v example.com 443
 
 `, programName, version, programName)
 }
