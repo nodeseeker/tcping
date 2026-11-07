@@ -35,7 +35,7 @@ main:
         script: |
           ver=$(cat bin/VERSION)
           bt=$(cat bin/BUILD_TIME)
-          tag="v${ver}-${bt}"
+          tag="${ver}-${bt}"
           echo "版本: $ver  构建时间: $bt  tag: $tag"
           echo "##[set-output tag=$tag]"
         exports:
