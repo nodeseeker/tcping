@@ -1,0 +1,9 @@
+# 主配置文件 - 导入子配置
+# include 不支持跨文件使用 YAML 锚点，所以锚点在各子文件中独立定义。
+# 构建发布流程见 .cnb/release.yml：
+#   - push 自动触发（推送到本仓库即构建并发布 Release）
+#   - web_trigger_build_release 手动按钮触发（按钮定义见 .cnb/web_trigger.yml）
+#   两者共用 .release_base 锚点，改一处即可。
+
+include:
+  - .cnb/release.yml

@@ -1,0 +1,92 @@
+# tcping 构建发布流程（yml 级复用流程块）
+#
+# 触发方式 —— 统一为「推 tag 才发版」，避免每次 push 都产生一个 Release：
+#   - CNB   : 本文件 "v*" 下的 tag_push（git push cnb v1.9.12）
+#   - GitHub: .github/workflows/release.yml 的 on.push.tags: ['v*']
+#   - 手动  : CNB 按钮（.cnb/web_trigger.yml 的 web_trigger_build_release）/ GitHub workflow_dispatch
+#
+# 发版步骤：
+#   1. 修改 src/version.txt（纯数字，如 1.9.13）
+#   2. git commit && git push origin main && git push cnb main
+#   3. git tag v1.9.13 && git push origin v1.9.13 && git push cnb v1.9.13
+#   4. 两端 CI 各自构建全平台并发布 Release，tag 为 v<version>-<yyyymmdd-hhmmss>
+#
+# 说明：
+#   - CNB 的 include 不支持跨文件 YAML 锚点，所以锚点必须在本文件内定义；
+#     主 .cnb.yml 通过 include 引入本文件。
+#   - 锚点放在顶层（CNB 官方触发规则文档示例写法），可被不同一级 key（main / "v*"）复用。
+#   - bin/VERSION 由 compiler.sh 写为带 v 前缀（如 v1.9.12），所以 tag 拼接用 ${ver}-${bt}，
+#     不要再额外加 v，否则会出现 vv1.9.12。
+
+# ==================== 复用流程块（锚点） ====================
+.release_base: &release_base
+  docker:
+    image: golang:1.26
+  runner:
+    tags: cnb:arch:amd64
+    cpus: 4
+  # Go 模块缓存 + 编译缓存（copy-on-write 支持并发构建，命中时省去 stdlib 交叉编译）
+  volumes:
+    - /root/go/pkg/mod:copy-on-write
+    - /root/.cache/go-build:copy-on-write
+  env:
+    CGO_ENABLED: "0"
+  stages:
+    # ==================== 安装编译依赖（golang 镜像缺 zip） ====================
+    - name: 安装zip
+      script: apt-get update -qq && apt-get install -y -qq zip
+
+    # ==================== 全平台编译（复用 tools/compiler.sh） ====================
+    # compiler.sh 内部: BUILD_TIME 只算一次(所有平台共用) + ldflags 注入 main.buildTime
+    # + 写出 bin/VERSION、bin/BUILD_TIME、bin/SHA256SUMS.txt
+    - name: 全平台编译
+      script: bash tools/compiler.sh
+
+    # ==================== 拼接 release tag ====================
+    - name: 解析tag
+      script: |
+        ver=$(cat bin/VERSION)
+        bt=$(cat bin/BUILD_TIME)
+        tag="${ver}-${bt}"
+        echo "版本: $ver  构建时间: $bt  tag: $tag"
+        echo "##[set-output tag=$tag]"
+      exports:
+        tag: TCPING_TAG
+
+    # ==================== 创建 Release ====================
+    - name: 创建Release
+      type: git:release
+      options:
+        tag: $TCPING_TAG
+        title: $TCPING_TAG
+        description: |
+          TCPing 编译时间 $TCPING_TAG
+
+          开源地址:
+          - GitHub: https://github.com/2959916298/tcping
+          - CNB: https://cnb.cool/l1094/tcping
+        latest: true
+
+    # ==================== 上传附件到 Release ====================
+    - name: 上传附件到Release
+      image: cnbcool/attachments:latest
+      settings:
+        tag: $TCPING_TAG
+        attachments:
+          - "./bin/*.zip"
+          - "./bin/*.tar.gz"
+          - "./bin/SHA256SUMS.txt"
+
+# ==================== 推 tag 触发（v*） ====================
+# 例：git tag v1.9.12 && git push cnb v1.9.12
+"v*":
+  tag_push:
+    - name: 构建tcping并发布Release(tag触发)
+      <<: *release_base
+
+# ==================== 手动按钮触发 ====================
+# 按钮定义见 .cnb/web_trigger.yml（event: web_trigger_build_release）
+main:
+  web_trigger_build_release:
+    - name: 构建tcping并发布Release(手动)
+      <<: *release_base

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/csv"
 	"errors"
 	"flag"
@@ -17,14 +18,28 @@ import (
 )
 
 const (
-	version     = "v1.9.7"
 	copyright   = "Copyright (c) 2026. All rights reserved."
 	programName = "TCPing"
+
+	repoGitHub = "https://github.com/2959916298/tcping"
+	repoCNB    = "https://cnb.cool/l1094/tcping"
 
 	defaultCSVFlushEvery = 50
 	defaultCSVFlushTick  = 1 * time.Second
 
 	defaultPort = 80
+)
+
+// 版本号唯一来源: src/version.txt（纯数字，如 1.9.10），编译期嵌入，代码与 CI 脚本共用
+//go:embed version.txt
+var versionFile string
+
+// buildTime 由构建时注入（所有平台共用同一个值）:
+// go build -ldflags "-X main.buildTime=yyyymmdd-hhmmss"
+// 未注入时（go run / 本地调试）不显示构建时间。
+var (
+	version   = "v" + strings.TrimSpace(versionFile)
+	buildTime = ""
 )
 
 // =====================
@@ -42,6 +57,8 @@ type Options struct {
 	ColorOutput   bool
 	VerboseMode   bool
 	ShowTimestamp bool
+	NoColor       bool // 关闭彩色输出（覆盖默认开启）
+	NoTimestamp   bool // 关闭时间戳（覆盖默认开启）
 	ShowVersion   bool
 	ShowHelp      bool
 	Port          int // default is set by flags (80). Must be 1..65535.
@@ -277,31 +294,57 @@ func (r *Runner) resolve(ctx context.Context) error {
 	dnsCtx, cancel := context.WithTimeout(ctx, r.opts.DNSTimeout)
 	defer cancel()
 
-	res := net.Resolver{}
-	dnsServerAddr := ""
+	// 显式指定 DNS 服务器时，只使用该服务器解析。
 	if strings.TrimSpace(r.opts.DNSServer) != "" {
-		var err error
-		dnsServerAddr, err = normalizeDNSServer(r.opts.DNSServer)
+		dnsServerAddr, err := normalizeDNSServer(r.opts.DNSServer)
 		if err != nil {
 			return fmt.Errorf("DNS 服务器地址无效: %w", err)
 		}
-
-		dialer := &net.Dialer{Timeout: r.opts.DNSTimeout}
-		res = net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-				return dialer.DialContext(ctx, network, dnsServerAddr)
-			},
-		}
-	}
-
-	ipAddrs, err := res.LookupIPAddr(dnsCtx, r.host)
-	if err != nil {
-		if dnsServerAddr != "" {
+		ipAddrs, err := r.lookupVia(dnsCtx, r.host, dnsServerAddr)
+		if err != nil {
 			return fmt.Errorf("通过 DNS 服务器 %s 解析 %s 失败: %w", dnsServerAddr, r.host, err)
 		}
-		return fmt.Errorf("解析 %s 失败: %w", r.host, err)
+		return r.applyAddrs(ipAddrs)
 	}
+
+	// 未指定 DNS 服务器：先使用系统默认解析器（尊重 TUN/代理的本地回环 DNS 配置），
+	// 失败后再依次回退公共 DNS，兼容 termux 等系统默认解析器不可用（如 [::1]:53 无监听）的环境。
+	var lastErr error
+	if ipAddrs, err := net.DefaultResolver.LookupIPAddr(dnsCtx, r.host); err == nil {
+		return r.applyAddrs(ipAddrs)
+	} else {
+		lastErr = err
+		fmt.Printf("默认 DNS 解析 %s 失败: %v，尝试回退公共 DNS\n", r.host, err)
+	}
+
+	for _, candidate := range []string{"8.8.8.8:53", "1.1.1.1:53", "223.5.5.5:53"} {
+		fmt.Printf("尝试回退使用 %s 解析 %s...\n", candidate, r.host)
+		if ipAddrs, err := r.lookupVia(dnsCtx, r.host, candidate); err == nil {
+			fmt.Printf("已通过 %s 成功解析 %s\n", candidate, r.host)
+			return r.applyAddrs(ipAddrs)
+		} else {
+			lastErr = err
+			fmt.Printf("通过 %s 解析 %s 失败: %v\n", candidate, r.host, err)
+		}
+	}
+
+	return fmt.Errorf("解析 %s 失败: %w", r.host, lastErr)
+}
+
+// lookupVia 通过指定的 DNS 服务器地址（ip:port）解析主机名。
+func (r *Runner) lookupVia(ctx context.Context, host, dnsServerAddr string) ([]net.IPAddr, error) {
+	dialer := &net.Dialer{Timeout: r.opts.DNSTimeout}
+	res := net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, dnsServerAddr)
+		},
+	}
+	return res.LookupIPAddr(ctx, host)
+}
+
+// applyAddrs 将解析到的地址列表按 -4/-6 偏好挑选一个 IP 并写入 Runner 状态。
+func (r *Runner) applyAddrs(ipAddrs []net.IPAddr) error {
 	if len(ipAddrs) == 0 {
 		return fmt.Errorf("未找到 %s 的 IP 地址", r.host)
 	}
@@ -555,6 +598,9 @@ func setupFlags(opts *Options) {
 
 	flag.IntVar(&opts.Count, "n", 0, "")
 	flag.IntVar(&opts.Count, "count", 0, "")
+	// -c 历史上是彩色开关；彩色现已默认开启（关闭用 --no-color），
+	// 故 -c 改为与 -n 等价的次数别名：-c 5 等价于 -n 5。
+	flag.IntVar(&opts.Count, "c", 0, "")
 
 	intervalMS := flag.Int("t", 1000, "")
 	flag.IntVar(intervalMS, "interval", 1000, "")
@@ -568,14 +614,19 @@ func setupFlags(opts *Options) {
 	flag.IntVar(&opts.Port, "p", defaultPort, "")
 	flag.IntVar(&opts.Port, "port", defaultPort, "")
 
-	flag.BoolVar(&opts.ColorOutput, "c", false, "")
-	flag.BoolVar(&opts.ColorOutput, "color", false, "")
+	// 彩色输出：默认开启；--color 兼容显式开启，--no-color 关闭。
+	// -c 已改为次数别名，不再控制颜色。
+	flag.BoolVar(&opts.ColorOutput, "color", true, "")
+	flag.BoolVar(&opts.NoColor, "no-color", false, "")
 
 	flag.BoolVar(&opts.VerboseMode, "v", false, "")
 	flag.BoolVar(&opts.VerboseMode, "verbose", false, "")
 
-	flag.BoolVar(&opts.ShowTimestamp, "D", false, "")
-	flag.BoolVar(&opts.ShowTimestamp, "timestamp", false, "")
+	// 时间戳：默认开启；-D/--timestamp 与短别名 -d 保持兼容，--no-timestamp 关闭。
+	flag.BoolVar(&opts.ShowTimestamp, "d", true, "")
+	flag.BoolVar(&opts.ShowTimestamp, "D", true, "")
+	flag.BoolVar(&opts.ShowTimestamp, "timestamp", true, "")
+	flag.BoolVar(&opts.NoTimestamp, "no-timestamp", false, "")
 
 	flag.BoolVar(&opts.CSVAuto, "o", false, "")
 	flag.BoolVar(&opts.CSVAuto, "csv", false, "")
@@ -588,6 +639,14 @@ func setupFlags(opts *Options) {
 	flag.BoolVar(&opts.ShowHelp, "help", false, "")
 
 	flag.Parse()
+
+	// 反向开关覆盖默认开启项
+	if opts.NoColor {
+		opts.ColorOutput = false
+	}
+	if opts.NoTimestamp {
+		opts.ShowTimestamp = false
+	}
 
 	opts.Interval = time.Duration(*intervalMS) * time.Millisecond
 	opts.Timeout = time.Duration(*timeoutMS) * time.Millisecond
@@ -661,7 +720,7 @@ func normalizeDNSServer(raw string) (string, error) {
 
 func parseTarget(opts *Options, args []string) (host string, port string, err error) {
 	if len(args) < 1 {
-		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息")
+		return "", "", errors.New("需要提供主机参数\n\n用法: tcping [选项] <主机> [端口]\n尝试 'tcping -h' 获取更多信息 -v为详细模式，-V是查看版本\n" + versionBlock())
 	}
 
 	rawHost := strings.TrimSpace(args[0])
@@ -733,9 +792,12 @@ func printHelp() {
     -w, --timeout <毫秒>        连接超时 (默认: 1000)
         --dns-timeout <毫秒>    DNS 解析超时 (默认: 1500)
 	    --dns-server <地址>     指定 DNS 服务器 (如: 8.8.8.8 或 8.8.8.8:53)
-    -c, --color                 启用彩色输出
+    -c <次数>                   同 -n 的别名（发送请求次数）
+        --color                 启用彩色输出 (默认已开启)
+        --no-color              关闭彩色输出
     -v, --verbose               启用详细模式
-	-D, --timestamp             显示时间戳 (yyyy-mm-dd hh:mm:ss)
+	-d, -D, --timestamp         显示时间戳 (yyyy-mm-dd hh:mm:ss，默认已开启)
+        --no-timestamp          关闭时间戳
     -o, --csv                   在当前目录生成 CSV 文件记录
         --csv-flush-every <N>   每 N 行 flush 一次 (默认: 50)
         --csv-flush-tick <毫秒> 定时 flush (默认: 1000)
@@ -750,14 +812,30 @@ func printHelp() {
     tcping -4 -n 5 8.8.8.8 443
     tcping -w 2000 example.com 22
 	tcping --dns-server 1.1.1.1 github.com 443
-    tcping -c -v example.com 443
+    tcping -c 5 -v example.com 443
 
 `, programName, version, programName)
 }
 
+// versionBlock 返回版本信息文本（-V 与无参数错误提示共用）
+func versionBlock() string {
+	var b strings.Builder
+	display := version
+	if buildTime != "" {
+		display = fmt.Sprintf("%s-%s", version, buildTime)
+	}
+	fmt.Fprintf(&b, "%s 版本 %s\n", programName, display)
+	if buildTime != "" {
+		fmt.Fprintf(&b, "构建时间: %s\n", buildTime)
+	}
+	fmt.Fprintln(&b, copyright)
+	fmt.Fprintf(&b, "GitHub: %s\n", repoGitHub)
+	fmt.Fprintf(&b, "CNB:    %s\n", repoCNB)
+	return b.String()
+}
+
 func printVersion() {
-	fmt.Printf("%s 版本 %s\n", programName, version)
-	fmt.Println(copyright)
+	fmt.Print(versionBlock())
 }
 
 func printSummary(stats *Statistics, verbose bool, displayHost, port string) {

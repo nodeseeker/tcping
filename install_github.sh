@@ -25,15 +25,19 @@ readonly NC='\033[0m' # No Color
 # 基本配置
 readonly INSTALL_DIR="/usr/local/bin"
 readonly TCPING_BIN="tcping"
-readonly GITHUB_API="https://api.github.com/repos/nodeseeker/tcping"
-readonly GITHUB_REPO="https://github.com/nodeseeker/tcping"
+readonly GITHUB_API="https://api.github.com/repos/2959916298/tcping"
+readonly GITHUB_REPO="https://github.com/2959916298/tcping"
 readonly TEMP_DIR="/tmp/tcping_install"
 
 # 全局变量
 VERBOSE=false
 FORCE=false
 UNINSTALL=false
+NO_INSTALL=false          # -o/-O：只下载输出二进制，不安装到系统
+OUTPUT_DIR=""             # 不安装模式的输出目录（会转成绝对路径）
+ORIG_PWD="$(pwd)"         # 调用脚本时的当前目录，-O 输出到此
 CURRENT_VERSION=""
+LATEST_TAG=""
 LATEST_VERSION=""
 
 # 打印函数
@@ -63,6 +67,40 @@ print_title() {
     echo -e "${BOLD}${BLUE}$1${NC}"
 }
 
+# =====================
+# 下载器探测与下载（curl/wget 二选一，自动回退，缺哪个都能跑）
+# =====================
+DOWNLOADER=""
+
+pick_downloader() {
+    if command -v curl >/dev/null 2>&1; then
+        DOWNLOADER="curl"
+    elif command -v wget >/dev/null 2>&1; then
+        DOWNLOADER="wget"
+    else
+        DOWNLOADER=""
+    fi
+    print_verbose "下载器: ${DOWNLOADER:-无}"
+}
+
+# do_download URL OUTFILE — 下载到文件，失败返回非 0
+do_download() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 --connect-timeout 10 -o "$2" "$1" ;;
+        wget) wget -q -T 15 -O "$2" "$1" ;;
+        *)    print_error "需要 curl 或 wget 才能下载"; return 1 ;;
+    esac
+}
+
+# dl_stdout URL — 输出到标准输出（API/文本抓取用）
+dl_stdout() {
+    case "$DOWNLOADER" in
+        curl) curl -fsSL --retry 2 -m 15 "$1" 2>/dev/null ;;
+        wget) wget -qO- -T 15 "$1" 2>/dev/null ;;
+        *)    return 1 ;;
+    esac
+}
+
 # 显示帮助信息
 show_help() {
     cat << EOF
@@ -73,15 +111,19 @@ TCPing 安装脚本
 选项:
     -u, --uninstall     卸载 tcping
     -f, --force         强制安装（跳过确认）
+    -o, --output <目录> 不安装，仅下载并输出二进制到指定目录（无需 root）
+    -O, --output-cwd    不安装，仅下载并输出二进制到当前目录（无需 root）
     -v, --verbose       详细输出
     -h, --help          显示此帮助信息
 
 支持的架构: amd64, arm64, 386, arm, loong64
 
 示例:
-    sudo $0             # 安装或更新 tcping
+    sudo $0             # 安装或更新 tcping（装到 /usr/local/bin）
     sudo $0 -u          # 卸载 tcping
     sudo $0 -f          # 强制安装
+    sudo $0 -o ./dist   # 只下载输出到 ./dist，不安装（无需 root）
+    $0 -O               # 只下载输出到当前目录，不安装（无需 root）
     sudo $0 -v          # 详细输出安装过程
 
 EOF
@@ -97,38 +139,57 @@ check_root() {
     print_verbose "Root 权限检查通过"
 }
 
-# 检查系统依赖
+# 检查系统依赖（下载器 curl/wget 二选一；解压用 tar+gzip，均为基础系统组件）
 check_dependencies() {
     local missing_deps=()
-    local deps=("curl" "unzip" "grep" "awk")
-    
-    print_verbose "检查系统依赖..."
-    
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing_deps+=("$dep")
-        fi
-    done
-    
+    local install_list=()
+
+    pick_downloader
+    if [[ -z "$DOWNLOADER" ]]; then
+        missing_deps+=("curl 或 wget")
+        install_list+=("curl")
+    fi
+    if ! command -v tar >/dev/null 2>&1; then
+        missing_deps+=("tar")
+        install_list+=("tar")
+    fi
+    if ! command -v gzip >/dev/null 2>&1; then
+        missing_deps+=("gzip")
+        install_list+=("gzip")
+    fi
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        print_warning "缺少以下依赖程序: ${missing_deps[*]}"
-        echo -n "是否安装缺少的依赖？ [y/N]: "
-        
+        print_warning "缺少依赖: ${missing_deps[*]}"
+        # 按发行版给出安装命令提示
+        if command -v apt-get >/dev/null 2>&1; then
+            print_info "安装: sudo apt-get install -y ${install_list[*]}"
+        elif command -v dnf >/dev/null 2>&1; then
+            print_info "安装: sudo dnf install -y ${install_list[*]}"
+        elif command -v yum >/dev/null 2>&1; then
+            print_info "安装: sudo yum install -y ${install_list[*]}"
+        elif command -v apk >/dev/null 2>&1; then
+            print_info "安装: sudo apk add ${install_list[*]}"
+        elif command -v pacman >/dev/null 2>&1; then
+            print_info "安装: sudo pacman -S --noconfirm ${install_list[*]}"
+        fi
+
+        echo -n "是否自动安装缺少的依赖？ [y/N]: "
         if [[ "$FORCE" == true ]]; then
             echo "y (强制模式)"
-            install_dependencies "${missing_deps[@]}"
+            install_dependencies "${install_list[@]}"
         else
             read -r response
             if [[ "$response" =~ ^[Yy]$ ]]; then
-                install_dependencies "${missing_deps[@]}"
+                install_dependencies "${install_list[@]}"
             else
                 print_error "缺少必要依赖，无法继续安装"
                 exit 1
             fi
         fi
     else
-        print_verbose "所有依赖已满足"
+        print_verbose "依赖检查通过"
     fi
+    pick_downloader  # 自动安装依赖后重新探测
 }
 
 # 安装依赖
@@ -209,17 +270,22 @@ get_latest_version() {
     print_verbose "正在获取最新版本信息..."
     
     local api_response
-    api_response=$(curl -s "$GITHUB_API/releases/latest" 2>/dev/null || echo "")
+    api_response=$(dl_stdout "$GITHUB_API/releases/latest" || true)
     
     if [[ -n "$api_response" ]]; then
-        LATEST_VERSION=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
+        LATEST_TAG=$(echo "$api_response" | grep -oE '"tag_name":\s*"[^"]*"' | cut -d'"' -f4)
     fi
     
-    if [[ -z "$LATEST_VERSION" ]]; then
-        print_warning "无法获取最新版本信息，使用默认版本 v1.7.1"
-        LATEST_VERSION="v1.7.1"
+    if [[ -z "$LATEST_TAG" ]]; then
+        print_warning "无法获取最新版本信息，使用默认版本 v1.9.9"
+        LATEST_TAG="v1.9.9"
     fi
     
+    # LATEST_TAG 可能带时间戳后缀（如 v1.9.10-20261030-205159）；
+    # 版本比较只取 semver 部分，否则 sort -V 永远判带时间戳的更新，每次都提示更新
+    LATEST_VERSION=$(echo "$LATEST_TAG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    
+    print_verbose "最新 tag: $LATEST_TAG"
     print_verbose "最新版本: $LATEST_VERSION"
 }
 
@@ -249,26 +315,36 @@ install_tcping() {
     arch=$(get_arch)
     
     print_info "正在为 $arch 架构下载 tcping $LATEST_VERSION..."
+    print_info "下载器: ${DOWNLOADER}"
     
     # 创建临时目录
     mkdir -p "$TEMP_DIR"
     cd "$TEMP_DIR"
     
-    # 构造下载 URL - 匹配实际的文件命名格式
-    local download_url="$GITHUB_REPO/releases/download/$LATEST_VERSION/tcping-linux-$arch.zip"
+    # 构造下载 URL - GitHub 支持 releases/latest/download 直链，
+    # 与 tag 无关（时间戳 tag 也兼容），无需依赖 API 获取的版本号
+    local download_url="$GITHUB_REPO/releases/latest/download/tcping-linux-$arch.tar.gz"
+    local output_file="tcping-linux-$arch.tar.gz"
     
     print_verbose "下载 URL: $download_url"
     
-    # 下载文件
-    if ! curl -L -o "tcping.zip" "$download_url"; then
+    # 下载文件（tar.gz：tar+gzip 是基础系统组件，省 unzip 依赖）
+    if ! do_download "$download_url" "$output_file"; then
         print_error "下载失败"
+        cleanup
+        exit 1
+    fi
+    
+    # 校验压缩包完整性
+    if ! tar -tzf "$output_file" >/dev/null 2>&1; then
+        print_error "下载的压缩包损坏"
         cleanup
         exit 1
     fi
     
     # 解压文件
     print_verbose "正在解压文件..."
-    if ! unzip -q "tcping.zip"; then
+    if ! tar -xzf "$output_file"; then
         print_error "解压失败"
         cleanup
         exit 1
@@ -284,6 +360,22 @@ install_tcping() {
         exit 1
     fi
     
+    # 不安装模式：仅把二进制复制到指定目录
+    if [[ "$NO_INSTALL" == true ]]; then
+        local dest="$OUTPUT_DIR/$TCPING_BIN"
+        print_verbose "正在输出到 $dest..."
+        if ! cp "$binary_file" "$dest"; then
+            print_error "输出失败：无法写入 $dest"
+            cleanup
+            exit 1
+        fi
+        chmod +x "$dest"
+        cleanup
+        print_success "tcping $LATEST_VERSION 已输出: $dest"
+        print_info "未安装到系统 PATH；直接运行: $dest <主机> [端口]"
+        return 0
+    fi
+
     # 安装二进制文件
     print_verbose "正在安装到 $INSTALL_DIR/$TCPING_BIN..."
     if ! cp "$binary_file" "$INSTALL_DIR/$TCPING_BIN"; then
@@ -356,6 +448,20 @@ main() {
                 VERBOSE=true
                 shift
                 ;;
+            -o|--output)
+                if [[ $# -lt 2 ]]; then
+                    print_error "-o 需要指定输出目录，例如: $0 -o ./dist"
+                    exit 1
+                fi
+                OUTPUT_DIR="$2"
+                NO_INSTALL=true
+                shift 2
+                ;;
+            -O|--output-cwd)
+                OUTPUT_DIR="$ORIG_PWD"
+                NO_INSTALL=true
+                shift
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -373,7 +479,16 @@ main() {
     echo
     
     # 检查权限
-    check_root
+    # -u 与 -o/-O 互斥
+    if [[ "$UNINSTALL" == true && "$NO_INSTALL" == true ]]; then
+        print_error "-u/--uninstall 不能与 -o/-O 同时使用"
+        exit 1
+    fi
+
+    # 不安装模式（-o/-O）只下载输出，无需 root
+    if [[ "$NO_INSTALL" != true ]]; then
+        check_root
+    fi
     
     # 如果是卸载模式
     if [[ "$UNINSTALL" == true ]]; then
@@ -383,6 +498,15 @@ main() {
     
     # 检查依赖
     check_dependencies
+
+    # 不安装模式：直接下载输出二进制，跳过已装版本比较与确认
+    if [[ "$NO_INSTALL" == true ]]; then
+        get_latest_version
+        mkdir -p "$OUTPUT_DIR"
+        OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+        install_tcping
+        exit 0
+    fi
     
     # 获取版本信息
     get_current_version

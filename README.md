@@ -2,12 +2,19 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-blue.svg)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-v1.7.4-green.svg)](https://github.com/nodeseeker/tcping/releases)
+[![Version](https://img.shields.io/badge/Version-v1.9.12-green.svg)](https://github.com/2959916298/tcping/releases)
 
 一款基于Golang的高性能TCP Ping工具，支持IPv4、IPv6和域名解析，提供丰富的自定义选项和详细的连接信息展示。
 
+> **本仓库与上游 [nodeseeker/tcping](https://github.com/nodeseeker/tcping) 的差异**
+>
+> 本仓库（`2959916298/tcping`）在 upstream 基础上做了以下改动：
+> - **DNS 解析回退**：未指定 `-dns-server` 时优先使用系统默认解析器（尊重 TUN/代理类软件的本地回环 DNS，如 `::1:53`）；仅当默认解析失败时才依次回退公共 DNS `8.8.8.8:53` / `1.1.1.1:53` / `223.5.5.5:53`，以解决 termux/Android 等环境 Go 原生 resolver 命中无监听的 `::1:53` 导致 `connection refused` 的问题。每次回退均打印明确日志。
+> - **默认开启彩色与时间戳**：`--color`（彩色）与 `-d`/`-D`/`--timestamp`（时间戳）默认生效；`-c` 改为 `-n` 的次数别名（关闭彩色用 `--no-color`）；新增 `--no-timestamp` 用于关闭时间戳。
+> - 当前版本 `v1.9.12`。
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="80%" />
+  <img src="https://raw.githubusercontent.com/2959916298/tcping/refs/heads/main/assets/demo.jpg" alt="releases_example" width="80%" />
 </p>
 
 
@@ -47,9 +54,9 @@
 
 #### 📥 下载预编译二进制文件 
 
-访问 [GitHub Releases](https://github.com/nodeseeker/tcping/releases) 页面，选择适合您系统的版本：
+访问 [GitHub Releases](https://github.com/2959916298/tcping/releases) 页面，选择适合您系统的版本：
 
-![releases_example](https://raw.githubusercontent.com/nodeseeker/tcping/refs/heads/main/assets/tcping_releases.jpg)
+![releases_example](https://raw.githubusercontent.com/2959916298/tcping/refs/heads/main/assets/tcping_releases.jpg)
 
 #### 🗂️ 支持的平台和架构
 
@@ -83,7 +90,7 @@ chmod +x /usr/local/bin/tcping
 ```bash
 tcping --version
 
-TCPing 版本 v1.9.0
+TCPing 版本 v1.9.9
 Copyright (c) 2026. All rights reserved.
 ```
 
@@ -93,14 +100,18 @@ Copyright (c) 2026. All rights reserved.
 
 一键安装脚本（推荐）
 
-#### 🌍 境外服务器
+> 先下载脚本再执行，root 登录与非 root（有 sudo）均适用；root 下可省略 `sudo`。
+
+#### 🌍 境外服务器（GitHub 直连版）
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/nodeseeker/tcping/main/install.sh) --force
+curl -Ls -o /tmp/install_github.sh https://raw.githubusercontent.com/2959916298/tcping/main/install_github.sh
+sudo bash /tmp/install_github.sh --force
 ```
 
-#### 🇨🇳 境内服务器（国内优化版）
+#### 🇨🇳 境内服务器（CNB 直连版）
 ```bash
-bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping/main/install_cn.sh) --force
+curl -sSOL https://cnb.cool/l1094/tcping/-/git/raw/main/install_cnb.sh
+sudo bash install_cnb.sh --force
 ```
 
 > **注意：** 脚本会自动安装到 `/usr/local/bin` 目录，需要root权限
@@ -117,8 +128,8 @@ bash <(curl -Ls https://gh-proxy.com/raw.githubusercontent.com/nodeseeker/tcping
 #### 🔄 脚本功能特性
 - **智能检测**：自动检测系统架构和已安装版本
 - **版本管理**：支持安装、更新、卸载操作
-- **依赖处理**：自动检测并安装必要依赖（curl、unzip等）
-- **多源下载**：国内版本支持多个镜像源，提高下载成功率
+- **依赖处理**：curl/wget 自动探测回退（二选一即可）；解压用 tar+gzip（基础系统组件，不依赖 unzip）；缺失时给出对应发行版的安装命令
+- **多源下载**：境内版本全程直连 cnb.cool（公开仓库，无需 token），境外版本使用 GitHub latest 直链
 - **错误处理**：完善的错误处理和用户提示
 
 
@@ -141,7 +152,8 @@ tcping [选项] <主机> [端口]
 | `-w` | `--timeout` | 连接超时时间（毫秒） | 1000ms |
 |  | `--dns-timeout` | DNS 解析超时时间（毫秒） | 1500ms |
 |  | `--dns-server` | 指定 DNS 服务器（如 1.1.1.1 或 8.8.8.8:53） | 系统默认 |
-| `-c` | `--color` | 启用彩色输出 | 关闭 |
+| `-c` | （无） | 次数别名，等价于 `-n` | 无限 |
+|  | `--color` | 启用彩色输出（默认已开，用 `--no-color` 关闭） | 开启 |
 | `-v` | `--verbose` | 启用详细模式（包含抖动统计） | 关闭 |
 | `-D` | `--timestamp` | 在每条结果前显示时间戳（yyyy-mm-dd hh:mm:ss） | 关闭 |
 | `-V` | `--version` | 显示版本信息 | - |
@@ -218,7 +230,7 @@ $ tcping -6 ipv6.google.com 443
 
 #### 彩色输出和详细模式
 ```bash
-$ tcping -c -v github.com 443
+$ tcping -v github.com 443
 正在对 github.com (IPv4 - 20.205.243.166) 端口 443 执行 TCP Ping
 域名 github.com 解析到的所有IP地址:
   [1] IPv4: 20.205.243.166
@@ -254,7 +266,7 @@ $ tcping -D -n 2 example.com 443
 
 #### 网络质量分析
 ```bash
-$ tcping -v -n 10 -c unstable-server.com 80
+$ tcping -v -n 10 unstable-server.com 80
 正在对 unstable-server.com (IPv4 - 203.0.113.10) 端口 80 执行 TCP Ping
 从 203.0.113.10:80 收到响应: seq=0 time=45.23ms
 从 203.0.113.10:80 收到响应: seq=1 time=52.67ms
@@ -326,7 +338,7 @@ CSV 字段说明：`timestamp,seq,host,ip,port,elapsed_ms,success,error,local_ad
 | SSH服务测试 | `tcping -p 22 server.com` | 测试SSH连接 |
 | 数据库连接测试 | `tcping -p 3306 db.server.com` | 测试MySQL连接 |
 | 快速诊断 | `tcping -n 3 -w 500 host.com 80` | 3次快速测试 |
-| 持续监控 | `tcping -t 5000 -c service.com 443` | 每5秒测试一次 |
+| 持续监控 | `tcping -t 5000 service.com 443` | 每5秒测试一次 |
 | 网络质量分析 | `tcping -v -n 20 target.com 443` | 详细统计含抖动分析 |
 | 多IP域名测试 | `tcping -v cdn.example.com 80` | 查看域名所有IP并测试首个IP |
 | CSV记录 | `tcping -o example.com` | 将结果保存为CSV文件 |
@@ -415,7 +427,7 @@ TCPing 提供了全面的错误处理机制：
 - 📡 **网络不可达**：路由或网络配置问题
 
 ### 用户友好提示
-- 彩色错误输出（启用 `-c` 选项时）
+- 彩色错误输出（默认启用，`--no-color` 关闭）
 - 详细的错误描述和可能的解决建议
 - 完整的统计信息，包括失败次数和丢包率
 - 详细模式下提供网络抖动分析，帮助诊断网络稳定性
@@ -505,7 +517,7 @@ TCPing 提供了全面的错误处理机制：
 ### 快速编译
 ```bash
 # 克隆仓库
-git clone https://github.com/nodeseeker/tcping.git
+git clone https://github.com/2959916298/tcping.git
 cd tcping
 
 # 编译当前平台版本
@@ -531,8 +543,8 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-w -s" -o tc
 项目提供了 `compiler.sh` 脚本，支持一键编译所有平台版本：
 
 ```bash
-chmod +x compiler.sh
-./compiler.sh
+chmod +x tools/compiler.sh
+./tools/compiler.sh
 ```
 
 编译产物将输出到 `./bin` 目录，并自动生成SHA256校验文件。
@@ -563,8 +575,8 @@ chmod +x test.sh
 
 感谢所有为项目做出贡献的开发者！
 
-<a href="https://github.com/nodeseeker/tcping/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=nodeseeker/tcping" />
+<a href="https://github.com/2959916298/tcping/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=2959916298/tcping" />
 </a>
 
 ---
